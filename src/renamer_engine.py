@@ -108,10 +108,32 @@ def common_title(names):
     vals = [Path(x).stem for x in names]
     return norm_sep(vals[0])
 
+def _clean_render_title(title, item):
+    if not title:
+        return title
+
+    s = str(title)
+    s = re.sub(r'(?i)\bS\d{1,2}[ ._-]*E\d{1,3}\b', ' ', s)
+    s = re.sub(r'(?i)\b\d{1,2}x\d{1,3}\b', ' ', s)
+
+    parts = re.split(r'[ ._\-\[\]\(\)]+', s)
+    cleaned = []
+    for part in parts:
+        if not part:
+            continue
+        if part.lower() in TECH_TOKENS:
+            continue
+        cleaned.append(part)
+
+    result = norm_sep(' '.join(cleaned))
+    return result or norm_sep(str(title))
+
+
 def render_template(template, item, title, normalize=True):
     season2 = f'S{item.season:02d}' if item.season is not None else ''
     ep2 = f'E{item.episode:02d}' if item.episode is not None else ''
     lang = item.lang or ''
+    title = _clean_render_title(title, item)
     vals = {
         'CIM': title, 'SZEZON': season2, 'EPIZOD': ep2, 'EV': '',
         'NYELV': lang, 'KITERJ': item.ext.lstrip('.'),

@@ -1,1 +1,1 @@
-A Patch gomb innen futtatja a helyi .py patchokat.
+Ide kerülnek a saját patchok. A futtatáshoz a patches mappába másold őket.
