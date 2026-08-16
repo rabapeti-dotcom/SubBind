@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+build/
+dist/
+*.spec
+backups/*
+Tesztadat_Generator/TESZT_KORNYEZET/AUTOMATA_TESZTEK/*
+Tesztadat_Generator/TESZT_KORNYEZET/TESZT_JELENTES_*.txt

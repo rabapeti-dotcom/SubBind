@@ -1,0 +1,32 @@
+SorozatRenamero_0.6.1-TEST_TISZTA
+│
+├── src/
+│   ├── main.py
+│   ├── version.py
+│   ├── renamer_engine.py
+│   └── testing/
+│       ├── __init__.py
+│       └── test_runner.py
+│
+├── TESTEK/
+│   └── ide másold a tesztscripteket
+│
+├── PATCH/
+│   └── ide másold/archiváld a patchokat
+│
+├── patches/
+│   └── ide kerülnek a Patch gombbal futtatható saját patchok
+│
+├── Tesztadat_Generator/
+│   └── TESZT_KORNYEZET/
+│       └── AUTOMATA_TESZTEK/
+│
+├── backups/
+├── docs/
+├── setup.bat
+├── run_dev.bat
+├── start_testlab.bat
+├── build_exe.bat
+├── requirements.txt
+├── README.md
+└── .gitignore
