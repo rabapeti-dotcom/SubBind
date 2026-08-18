@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QTimer, QPoint, QSize
+from PySide6.QtCore import Qt, QTimer, QPoint, QSize, QDir
 from PySide6.QtGui import QFont, QAction, QPalette, QColor, QIcon, QPixmap, QPainter, QPen, QBrush
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -1140,7 +1140,7 @@ class MainWindow(QMainWindow):
         root.addLayout(path_row)
 
         model = QFileSystemModel(dialog)
-        model.setFilter(Qt.MatchFlag.MatchDirs | Qt.MatchFlag.MatchNoDotAndDotDot)
+        model.setFilter(QDir.Filter.AllDirs | QDir.Filter.NoDotAndDotDot)
         model.setRootPath(str(Path.home()))
 
         tree = QTreeView(dialog)
