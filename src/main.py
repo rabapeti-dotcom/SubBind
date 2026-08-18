@@ -1431,6 +1431,8 @@ class MainWindow(QMainWindow):
             "Ez csak a program listáját üríti ki, az eredeti fájlokat nem törli."
         ) == QMessageBox.StandardButton.Yes:
             self.items = []
+            self.title_edit.clear()
+            self.detected_series_label.setText("Még nincs elemzés")
             self.refresh()
 
     def remove_selected(self):
