@@ -807,6 +807,13 @@ class MainWindow(QMainWindow):
 
         layout.addLayout(tools)
 
+        self.empty_state = QLabel("<b>Nincsenek betöltött fájlok</b><br>Húzz ide videókat és feliratokat, vagy kattints a „Hozzáadás” gombra.")
+        self.empty_state.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty_state.setWordWrap(True)
+        self.empty_state.setFixedHeight(90)
+        self.empty_state.setStyleSheet("QLabel { color: #666; padding: 24px; border: 1px dashed #bdbdbd; border-radius: 8px; }")
+        layout.addWidget(self.empty_state)
+
         output_box = QGroupBox("Kimenet")
         output_layout = QGridLayout(output_box)
 
@@ -877,6 +884,8 @@ class MainWindow(QMainWindow):
         header.setSectionResizeMode(8, QHeaderView.ResizeMode.ResizeToContents)
 
         layout.addWidget(self.table)
+        self.table.setVisible(False)
+        self.empty_state.setVisible(True)
 
         self.on_output_mode_changed(self.output_mode_combo.currentText())
 
@@ -1912,6 +1921,9 @@ class MainWindow(QMainWindow):
         self.analyze()
         visible=self._visible_items()
         self.table.setRowCount(0)
+        has_items = bool(visible)
+        self.empty_state.setVisible(not has_items)
+        self.table.setVisible(has_items)
 
         for item in visible:
             row=self.table.rowCount()
