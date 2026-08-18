@@ -8,7 +8,7 @@ import shutil
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QListWidget,
-    QTextEdit, QLabel, QMessageBox, QProgressBar, QCheckBox,
+    QListWidgetItem, QTextEdit, QLabel, QMessageBox, QProgressBar, QCheckBox,
     QFileDialog, QLineEdit
 )
 from PySide6.QtGui import QFont
@@ -131,19 +131,40 @@ class TestRunnerDialog(QDialog):
     # ---------- lista ----------
 
     def scan(self):
-        """A TESTEK mappa aktuális scriptjeit betölti, duplikáció nélkül."""
+        """A három hivatalos tesztbelépési pontot tölti be."""
         self.list.clear()
-        files = sorted(
-            self.tests_dir.glob("*.py"),
-            key=lambda p: p.name.lower()
-        )
-        for p in files:
-            if not p.name.startswith("_"):
-                self.list.addItem(str(p))
+
+        entry_points = [
+            (
+                "Teljes regressziós tesztek — 34",
+                self.tests_dir / "FUTTATAS_OSSZES_TEST.py",
+            ),
+            (
+                "GUI integrációs tesztek — 14",
+                self.tests_dir / "08_GUI_INTEGRACIO" / "FUTTATAS_GUI_TESTEK.py",
+            ),
+            (
+                "Valós fájlnevek — 6 (a teljes regresszió része)",
+                self.tests_dir / "09_VALOS_FAJLNEVEK"
+                / "FUTTATAS_VALOS_FAJLNEVEK.py",
+            ),
+        ]
+
+        files = []
+        for label, path in entry_points:
+            if not path.is_file():
+                continue
+            item = QListWidgetItem(label)
+            item.setData(Qt.ItemDataRole.UserRole, str(path))
+            item.setToolTip(str(path.relative_to(self.project_root)))
+            self.list.addItem(item)
+            files.append(path)
 
         self.output.setPlainText(
             f"Tesztkönyvtár: {self.tests_dir}\n"
-            f"Talált tesztek: {len(files)}\n"
+            f"Hivatalos tesztbelépési pontok: {len(files)}\n"
+            "Megjegyzés: a „Valós fájlnevek” csomag a teljes "
+            "regressziós futtató része is.\n"
             "A futtatás a TESZT_KORNYEZET alatt dolgozik."
         )
 
@@ -191,7 +212,10 @@ class TestRunnerDialog(QDialog):
 
     def run_tests(self):
         files = [
-            Path(self.list.item(i).text())
+            Path(
+                self.list.item(i).data(Qt.ItemDataRole.UserRole)
+                or self.list.item(i).text()
+            )
             for i in range(self.list.count())
         ]
         if not files:
