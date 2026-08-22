@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QTimer, QPoint, QSize, QDir
+from PySide6.QtCore import Qt, QTimer, QPoint, QSize, QDir, QUrl
 from PySide6.QtGui import QFont, QAction, QPalette, QColor, QIcon, QPixmap, QPainter, QPen, QBrush
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -21,11 +21,69 @@ from PySide6.QtWidgets import (
 
 from version import APP_NAME, APP_VERSION, AUTHOR
 from renamer_engine import (
-    parse_item, ALL_EXTS, common_title, render_template
+    parse_item, ALL_EXTS, common_title, render_template,
+    disambiguate_subtitle_target_names, apply_pair_group_status,
+    apply_item_target_names, NamingContext,
+    apply_destination_conflicts, apply_completion_status,
+    destination_matches_output, copy_to_destination,
+    rollback_copied_files, rollback_renamed_files,
+    verify_copy_undo, apply_copy_undo,
+    verify_inplace_undo, apply_inplace_undo,
 )
 
-# 0.6.0-TEST: ideiglenes Tesztlabor
-from testing.test_runner import TestRunnerDialog
+DATA_DIR_ENV = "SERIESRENAMER_DATA"
+
+
+def resolve_data_dir():
+    """Portable adatmappa: exe/projekt mellett data/, teszthez SERIESRENAMER_DATA.
+
+    Frozen: <exe mappa>/data
+    Fejlesztés: <projekt gyökér>/data
+    Nem %APPDATA%.
+    """
+    override = str(os.environ.get(DATA_DIR_ENV, "") or "").strip()
+    if override:
+        return Path(override)
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent / "data"
+    return Path(__file__).resolve().parent.parent / "data"
+
+
+RELEASE_ENV = "SERIESRENAMER_RELEASE"
+
+
+def dev_tools_enabled():
+    """Tesztlabor / Patch Center: csak fejlesztői futtatás, nem frozen release."""
+    flag = str(os.environ.get(RELEASE_ENV, "") or "").strip().lower()
+    if flag in {"1", "true", "yes", "on"}:
+        return False
+    if getattr(sys, "frozen", False):
+        return False
+    return True
+
+
+def format_size_bytes(n):
+    """Emberi méret; a nyers bájt a hívónál marad."""
+    try:
+        n = int(n or 0)
+    except (TypeError, ValueError):
+        n = 0
+    if n < 1024:
+        return f"{n} B"
+    if n < 1024 ** 2:
+        return f"{n / 1024:.1f} KB"
+    if n < 1024 ** 3:
+        return f"{n / (1024 ** 2):.1f} MB"
+    return f"{n / (1024 ** 3):.2f} GB"
+
+
+def file_identity_key(path):
+    """Ugyanaz a fájl: feloldott, Windows-on kis-nagybetű független útvonal."""
+    p = Path(path)
+    try:
+        return os.path.normcase(str(p.resolve()))
+    except OSError:
+        return os.path.normcase(str(p))
 
 
 
@@ -475,38 +533,44 @@ class MainWindow(QMainWindow):
         self.history = []
         self.history_selected_keys = set()
         self.cancel_requested = False
-        self.data_dir = Path(os.getenv("APPDATA", Path.home())) / "SeriesRenamer"
+        self.data_dir = resolve_data_dir()
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
-        # Tesztfázisú helyi patch könyvtár.
+        # Tesztfázisú helyi patch könyvtár (csak DEV; release buildben nincs Patch UI).
         self.patch_dir = Path(__file__).resolve().parent.parent / "patches"
-        self.patch_dir.mkdir(parents=True, exist_ok=True)
-
-        self._load_ui_preferences()
+        if dev_tools_enabled():
+            self.patch_dir.mkdir(parents=True, exist_ok=True)
 
         self.template_value = "{CIM}.{SZEZON}{EPIZOD}"
         self.title_value = ""
+        self.title_manual = False
         self.mode_value = "Sorozat"
         self.normalize_value = True
         self.lang_norm_value = True
-        self.include_subdirs_value = False
+        self.include_subdirs_value = True
         self.check_conflicts_value = True
         self.preserve_selection_value = True
+        self._syncing_table = False
+        self._last_folder = str(Path.home())
         self.sort_mode_value = "Évad → epizód"
-        if not hasattr(self, "language"):
-            self.language = "hu"
-        if not hasattr(self, "show_welcome"):
-            self.show_welcome = True
-        if not hasattr(self, "output_mode"):
-            self.output_mode = "Másolás kimeneti mappába és átnevezés"
-        if not hasattr(self, "output_dir"):
-            self.output_dir = ""
-        if not hasattr(self, "appearance"):
-            self.appearance = "Világos"
+        self.language = "hu"
+        self.show_welcome = True
+        self.output_mode = "Másolás kimeneti mappába és átnevezés"
+        self.output_dir = ""
+        self.appearance = "Világos"
+
+        self._load_ui_preferences()
+        self.title_value = ""
+        self.title_manual = False
+
+        intended_template = self.template_value
 
         self.build_ui()
+        self.setAcceptDrops(True)
         self.load_history()
         self.on_mode_changed()
+        if hasattr(self, "template_edit"):
+            self.template_edit.setText(intended_template)
         self.refresh()
 
         QTimer.singleShot(150, self.first_run_welcome)
@@ -536,6 +600,25 @@ class MainWindow(QMainWindow):
         )
         self.output_dir = config.get("output_dir", "")
         self.appearance = config.get("appearance", "Világos")
+
+        modes = {"Automatikus / Vegyes", "Sorozat", "Film"}
+        sorts = {"Név", "Évad → epizód", "Fájltípus", "Módosítás dátuma"}
+        saved_mode = config.get("mode")
+        if saved_mode in modes:
+            self.mode_value = saved_mode
+        saved_template = str(config.get("template") or "").strip()
+        if saved_template:
+            self.template_value = saved_template
+        if "normalize" in config:
+            self.normalize_value = bool(config.get("normalize"))
+        if "include_subdirs" in config:
+            self.include_subdirs_value = bool(config.get("include_subdirs"))
+        if "check_conflicts" in config:
+            self.check_conflicts_value = bool(config.get("check_conflicts"))
+        saved_sort = config.get("sort_mode")
+        if saved_sort in sorts:
+            self.sort_mode_value = saved_sort
+        # title_var, lang_norm, preserve_selection szándékosan nem töltődik.
 
         # Új verzióra frissítéskor a bemutatóablak egyszer ismét jelenjen meg.
         # Ha a felhasználó ezt már ebben a verzióban letiltja, az állapot mentésre kerül.
@@ -574,37 +657,37 @@ class MainWindow(QMainWindow):
         for text, callback in [
             ("Lista ürítése", self.clear_list),
             ("Ellenőrzés", self.check),
-            ("Előnézet frissítése", self.refresh),
+            ("Előnézet frissítése", lambda: self.refresh(reanalyze=True)),
         ]:
             b = QPushButton(text)
             b.clicked.connect(callback)
             top.addWidget(b)
 
-        # 0.6.0-TEST: ideiglenes Tesztlabor
-        self.test_lab_btn = QPushButton("Tesztlabor")
-        self.test_lab_btn.setStyleSheet(
-            "QPushButton { background:#6a1b9a; color:white; "
-            "font-weight:bold; padding:6px 12px; border:1px solid #4a126d; }"
-            "QPushButton:hover { background:#4a126d; }"
-        )
-        self.test_lab_btn.setToolTip("Ideiglenes automata tesztlabor — 0.6.0-TEST")
-        self.test_lab_btn.clicked.connect(self.open_test_lab)
-        top.addWidget(self.test_lab_btn)
+        if dev_tools_enabled():
+            # 0.6.0-TEST: ideiglenes Tesztlabor — csak DEV / teszt futtatás.
+            self.test_lab_btn = QPushButton("Tesztlabor")
+            self.test_lab_btn.setStyleSheet(
+                "QPushButton { background:#6a1b9a; color:white; "
+                "font-weight:bold; padding:6px 12px; border:1px solid #4a126d; }"
+                "QPushButton:hover { background:#4a126d; }"
+            )
+            self.test_lab_btn.setToolTip("Ideiglenes automata tesztlabor — 0.6.0-TEST")
+            self.test_lab_btn.clicked.connect(self.open_test_lab)
+            top.addWidget(self.test_lab_btn)
 
-        # 0.6.1-TEST: helyi Patch Center.
-        # Későbbi publikus kiadásban ez azonos UI mögött online Upgrade lehet.
-        self.patch_btn = QPushButton("Patch")
-        self.patch_btn.setStyleSheet(
-            "QPushButton { background:#455a64; color:white; "
-            "font-weight:bold; padding:6px 12px; border:1px solid #263238; }"
-            "QPushButton:hover { background:#37474f; }"
-        )
-        self.patch_btn.setToolTip(
-            "Tesztfázis: helyi patchok futtatása. "
-            "Később online Upgrade központ használhatja ugyanezt a gombot."
-        )
-        self.patch_btn.clicked.connect(self.open_patch_center)
-        top.addWidget(self.patch_btn)
+            # 0.6.1-TEST: helyi Patch Center — csak DEV / teszt futtatás.
+            self.patch_btn = QPushButton("Patch")
+            self.patch_btn.setStyleSheet(
+                "QPushButton { background:#455a64; color:white; "
+                "font-weight:bold; padding:6px 12px; border:1px solid #263238; }"
+                "QPushButton:hover { background:#37474f; }"
+            )
+            self.patch_btn.setToolTip(
+                "Tesztfázis: helyi patchok futtatása. "
+                "Később online Upgrade központ használhatja ugyanezt a gombot."
+            )
+            self.patch_btn.clicked.connect(self.open_patch_center)
+            top.addWidget(self.patch_btn)
 
         self.help_btn = QPushButton("Súgó ▾")
         help_menu = QMenu(self)
@@ -775,11 +858,13 @@ class MainWindow(QMainWindow):
 
         self.filter_edit = QLineEdit()
         self.filter_edit.setPlaceholderText("Keresés...")
-        self.filter_edit.textChanged.connect(self.refresh)
+        self.filter_edit.textChanged.connect(
+            lambda *_: self.refresh(reanalyze=False)
+        )
         tools.addWidget(self.filter_edit, 1)
 
         search = QPushButton("Keresés")
-        search.clicked.connect(self.refresh)
+        search.clicked.connect(lambda: self.refresh(reanalyze=False))
         tools.addWidget(search)
 
         tools.addWidget(QLabel("Rendezés:"))
@@ -789,7 +874,9 @@ class MainWindow(QMainWindow):
             "Név", "Évad → epizód", "Fájltípus", "Módosítás dátuma"
         ])
         self.sort_combo.setCurrentText(self.sort_mode_value)
-        self.sort_combo.currentTextChanged.connect(self.refresh)
+        self.sort_combo.currentTextChanged.connect(
+            lambda *_: self.refresh(reanalyze=False)
+        )
         tools.addWidget(self.sort_combo)
 
         select_all = QPushButton("Minden kiválasztása")
@@ -853,9 +940,9 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(output_box)
 
-        self.table = QTableWidget(0, 9)
+        self.table = QTableWidget(0, 10)
         self.table.setHorizontalHeaderLabels([
-            "✓", "Sorozat", "Évad", "Epizód", "Típus",
+            "✓", "Sorozat", "Évad", "Epizód", "Típus", "Méret",
             "Eredeti", "Új név", "Másolási állapot", "Folyamat"
         ])
         self.table.setSelectionBehavior(
@@ -864,9 +951,15 @@ class MainWindow(QMainWindow):
         self.table.setEditTriggers(
             QAbstractItemView.EditTrigger.NoEditTriggers
         )
+        self.table.setTextElideMode(Qt.TextElideMode.ElideMiddle)
+        self.table.setHorizontalScrollMode(
+            QAbstractItemView.ScrollMode.ScrollPerPixel
+        )
+        self.table.setWordWrap(False)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self.context_menu)
         self.table.cellClicked.connect(self._table_cell_clicked)
+        self.table.cellDoubleClicked.connect(self._table_double_clicked)
         self.table.horizontalHeader().sectionClicked.connect(self._header_section_clicked)
 
         header = self.table.horizontalHeader()
@@ -878,10 +971,14 @@ class MainWindow(QMainWindow):
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(7, QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(8, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(9, QHeaderView.ResizeMode.ResizeToContents)
+        header.setMinimumSectionSize(48)
+        self.table.setColumnWidth(6, 220)
+        self.table.setColumnWidth(7, 180)
 
         layout.addWidget(self.table)
         self.table.setVisible(False)
@@ -958,9 +1055,9 @@ class MainWindow(QMainWindow):
         self.conflicts_cb = QCheckBox("Névütközések előzetes ellenőrzése")
         self.preserve_cb = QCheckBox("Kijelölések megőrzése")
 
-        self.normalize_cb.setChecked(True)
-        self.subdirs_cb.setChecked(True)
-        self.conflicts_cb.setChecked(True)
+        self.normalize_cb.setChecked(bool(self.normalize_value))
+        self.subdirs_cb.setChecked(bool(self.include_subdirs_value))
+        self.conflicts_cb.setChecked(bool(self.check_conflicts_value))
         self.preserve_cb.setChecked(True)
 
         for cb in [
@@ -1077,6 +1174,16 @@ class MainWindow(QMainWindow):
 
     def _title_changed(self, value):
         self.title_value = value
+        self.title_manual = bool(str(value).strip())
+
+    def _set_title_programmatic(self, text, manual=False):
+        text = "" if text is None else str(text)
+        if hasattr(self, "title_edit"):
+            self.title_edit.blockSignals(True)
+            self.title_edit.setText(text)
+            self.title_edit.blockSignals(False)
+        self.title_value = text
+        self.title_manual = bool(manual) and bool(text.strip())
 
     def _template_changed(self, value):
         self.template_value = value
@@ -1142,7 +1249,9 @@ class MainWindow(QMainWindow):
 
         path_row = QHBoxLayout()
         path_row.addWidget(QLabel("Hely:"))
-        path_edit = QLineEdit(str(Path.home()))
+        start = self._last_folder if Path(self._last_folder).is_dir() else str(Path.home())
+        path_edit = QLineEdit(start)
+        path_edit.setPlaceholderText("Mappa útvonala – beilleszthető vagy begépelhető")
         path_row.addWidget(path_edit, 1)
         go_btn = QPushButton("Megnyitás")
         path_row.addWidget(go_btn)
@@ -1150,11 +1259,18 @@ class MainWindow(QMainWindow):
 
         model = QFileSystemModel(dialog)
         model.setFilter(QDir.Filter.AllDirs | QDir.Filter.NoDotAndDotDot)
-        model.setRootPath(str(Path.home()))
+        computer_root = ""
+        model.setRootPath(computer_root)
+        start_index = model.index(start)
+        if not start_index.isValid():
+            start_index = model.index(str(Path.home()))
 
         tree = QTreeView(dialog)
         tree.setModel(model)
-        tree.setRootIndex(model.index(str(Path.home())))
+        tree.setRootIndex(model.index(computer_root) if model.index(computer_root).isValid() else start_index)
+        if start_index.isValid():
+            tree.setCurrentIndex(start_index)
+            tree.scrollTo(start_index)
         tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         tree.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         tree.setColumnWidth(0, 360)
@@ -1216,13 +1332,12 @@ class MainWindow(QMainWindow):
         all_paths = []
         seen = set()
         for root_path in folders:
-            iterator = root_path.rglob("*") if recursive else root_path.glob("*")
-            for pth in iterator:
-                if pth.is_file() and pth.suffix.lower() in ALL_EXTS:
-                    key = os.path.normcase(str(pth.resolve()))
-                    if key not in seen:
-                        seen.add(key)
-                        all_paths.append(pth)
+            self._last_folder = str(root_path)
+            for pth in self._iter_folder_files(root_path, recursive):
+                key = file_identity_key(pth)
+                if key not in seen:
+                    seen.add(key)
+                    all_paths.append(pth)
 
         if not all_paths:
             QMessageBox.information(
@@ -1234,28 +1349,74 @@ class MainWindow(QMainWindow):
 
         self.add_paths(all_paths)
 
-    def add_folder(self):
-        folder = QFileDialog.getExistingDirectory(
-            self, "Mappa kiválasztása"
+    def _iter_folder_files(self, root, recursive):
+        root = Path(root)
+        iterator = root.rglob("*") if recursive else root.glob("*")
+        for pth in iterator:
+            try:
+                if pth.is_file() and pth.suffix.lower() in ALL_EXTS:
+                    yield pth
+            except OSError:
+                continue
+
+    def _choose_source_folder(self):
+        """Útvonal beillesztése + natív tallózás, a Windows mély fát nem cseréli le."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Mappa hozzáadása")
+        dialog.resize(560, 140)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel(
+            "Illeszd be a mappa útvonalát, vagy tallózz. "
+            "Az almappák a beállítások „Almappák bevonása” kapcsolóját követik."
+        ))
+        row = QHBoxLayout()
+        start = self._last_folder if Path(self._last_folder).is_dir() else str(Path.home())
+        path_edit = QLineEdit(start)
+        path_edit.setPlaceholderText(r"C:\Sorozatok\Show")
+        row.addWidget(path_edit, 1)
+        browse = QPushButton("Tallózás…")
+        row.addWidget(browse)
+        layout.addLayout(row)
+
+        def browse_native():
+            chosen = QFileDialog.getExistingDirectory(
+                dialog, "Mappa kiválasztása", path_edit.text().strip() or start
+            )
+            if chosen:
+                path_edit.setText(chosen)
+
+        browse.clicked.connect(browse_native)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok,
+            parent=dialog
         )
-        if not folder:
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Hozzáadás")
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("Mégsem")
+        layout.addWidget(buttons)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return None
+        raw = path_edit.text().strip().strip('"')
+        if not raw:
+            return None
+        folder = Path(raw)
+        if not folder.is_dir():
+            QMessageBox.warning(
+                self, "Érvénytelen mappa", f"A mappa nem található:\n{folder}"
+            )
+            return None
+        self._last_folder = str(folder)
+        return folder
+
+    def add_folder(self):
+        root = self._choose_source_folder()
+        if root is None:
             return
 
-        root = Path(folder)
-
-        def collect(recursive):
-            iterator = root.rglob("*") if recursive else root.glob("*")
-            return [
-                p for p in iterator
-                if p.is_file() and p.suffix.lower() in ALL_EXTS
-            ]
-
         recursive = self.subdirs_cb.isChecked()
-        paths = collect(recursive)
+        paths = list(self._iter_folder_files(root, recursive))
 
-        # Ha az almappák bevonása ki van kapcsolva, de a kiválasztott
-        # mappában közvetlenül nincs támogatott fájl, kérdezzünk rá.
-        # Ez tipikusan akkor fordul elő, ha a sorozat évadonként almappákban van.
         if not paths and not recursive:
             answer = QMessageBox.question(
                 self,
@@ -1267,7 +1428,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.StandardButton.Yes,
             )
             if answer == QMessageBox.StandardButton.Yes:
-                paths = collect(True)
+                paths = list(self._iter_folder_files(root, True))
 
         if not paths:
             QMessageBox.information(
@@ -1283,36 +1444,117 @@ class MainWindow(QMainWindow):
         self.add_paths(paths)
 
     def add_files(self):
+        start = self._last_folder if Path(self._last_folder).is_dir() else ""
         extensions = " ".join("*" + x for x in sorted(ALL_EXTS))
         paths, _ = QFileDialog.getOpenFileNames(
             self,
             "Videók és feliratok kiválasztása",
-            "",
+            start,
             f"Támogatott fájlok ({extensions});;Minden fájl (*.*)"
         )
+        if paths:
+            self._last_folder = str(Path(paths[0]).parent)
         self.add_paths([Path(p) for p in paths])
+
+    def dragEnterEvent(self, event):
+        if event.mimeData() and event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData() and event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event):
+        urls = event.mimeData().urls() if event.mimeData() else []
+        paths = [Path(u.toLocalFile()) for u in urls if u.toLocalFile()]
+        if paths:
+            self._ingest_user_paths(paths)
+            event.acceptProposedAction()
+
+    def _ingest_user_paths(self, paths):
+        """Fájlok és mappák (húzás vagy teszt) egységes beléptetése."""
+        recursive = self.subdirs_cb.isChecked() if hasattr(self, "subdirs_cb") else True
+        collected = []
+        seen = set()
+        missing = []
+        for raw in paths:
+            p = Path(raw)
+            try:
+                exists_file = p.is_file()
+                exists_dir = p.is_dir()
+            except OSError:
+                missing.append(p)
+                continue
+            if exists_dir:
+                self._last_folder = str(p)
+                for child in self._iter_folder_files(p, recursive):
+                    key = file_identity_key(child)
+                    if key not in seen:
+                        seen.add(key)
+                        collected.append(child)
+            elif exists_file:
+                key = file_identity_key(p)
+                if key not in seen:
+                    seen.add(key)
+                    collected.append(p)
+            else:
+                missing.append(p)
+        if missing and not collected:
+            QMessageBox.warning(
+                self,
+                "Nem elérhető útvonal",
+                "A megadott fájl vagy mappa nem található:\n"
+                + "\n".join(str(x) for x in missing[:8])
+            )
+            return
+        if not collected:
+            QMessageBox.information(
+                self,
+                "Nincs hozzáadható fájl",
+                "A húzott mappákban nem találtam támogatott videó- vagy feliratfájlt."
+            )
+            return
+        self.add_paths(collected)
 
     def _source_path(self, item):
         """Az eredeti forrásútvonal, amely másolás után sem változik."""
-        return Path(getattr(item, "source_path", item.path))
+        raw = getattr(item, "source_path", None)
+        if not raw:
+            return Path(item.path)
+        return Path(raw)
 
     def add_paths(self, paths):
-        existing = {os.path.normcase(i.path) for i in self.items}
+        existing = set()
+        for item in self.items:
+            existing.add(file_identity_key(item.path))
+            existing.add(file_identity_key(self._source_path(item)))
         added = 0
 
         for p in paths:
             p = Path(p)
-            key = os.path.normcase(str(p))
+            key = file_identity_key(p)
             if key not in existing:
                 item = parse_item(p)
                 item.source_path = str(p)
+                try:
+                    st = p.stat()
+                    item.size_bytes = st.st_size
+                    item.mtime_ns = getattr(st, "st_mtime_ns", int(st.st_mtime * 1e9))
+                except OSError:
+                    item.size_bytes = 0
+                    item.mtime_ns = 0
                 self.items.append(item)
                 existing.add(key)
                 added += 1
 
         if not self.title_value:
-            self.title_edit.setText(
-                common_title([Path(i.path).name for i in self.items])
+            media_names = [
+                Path(i.path).name for i in self.items
+                if i.kind in ("video", "sub")
+            ]
+            self._set_title_programmatic(
+                common_title(media_names),
+                manual=False,
             )
 
         self.refresh()
@@ -1440,7 +1682,7 @@ class MainWindow(QMainWindow):
             "Ez csak a program listáját üríti ki, az eredeti fájlokat nem törli."
         ) == QMessageBox.StandardButton.Yes:
             self.items = []
-            self.title_edit.clear()
+            self._set_title_programmatic("", manual=False)
             self.detected_series_label.setText("Még nincs elemzés")
             self.refresh()
 
@@ -1482,8 +1724,11 @@ class MainWindow(QMainWindow):
 
     def set_all(self, value):
         for item in self.items:
+            if value and item.kind not in ("video", "sub"):
+                item.selected = False
+                continue
             item.selected = value
-        self.refresh()
+        self.refresh(reanalyze=False)
 
     def _header_section_clicked(self, section):
         # Az első oszlop fejlécére kattintva váltunk:
@@ -1491,26 +1736,35 @@ class MainWindow(QMainWindow):
         # ha minden kijelölve van -> mindent törlünk.
         if section != 0 or not self.items:
             return
-        all_selected = all(i.selected for i in self.items)
+        media = [i for i in self.items if i.kind in ("video", "sub")]
+        if not media:
+            return
+        all_selected = all(i.selected for i in media)
         for item in self.items:
-            item.selected = not all_selected
+            item.selected = (not all_selected) and item.kind in ("video", "sub")
         self._refresh_selection_status()
 
-    def _table_cell_clicked(self, row, column):
-        if column != 0:
-            return
+    def _table_double_clicked(self, row, column):
         visible = self._visible_items()
         if 0 <= row < len(visible):
-            visible[row].selected = not visible[row].selected
-            self.refresh()
+            item = visible[row]
+            if hasattr(self, "status_label"):
+                self.status_label.setText(str(self._source_path(item)))
+
+    def _table_cell_clicked(self, row, column):
+        # A 0. oszlop kijelölését kizárólag a checkbox kezeli.
+        # A cellClicked + stateChanged együtt dupla váltást okozna.
+        return
 
     def toggle_item(self, row, column):
-        if 0 <= row < len(self.items):
-            # The table may be sorted/filtered, so use the stored row index.
-            item = self._visible_items()[row] if row < len(self._visible_items()) else None
-            if item:
+        visible = self._visible_items()
+        if 0 <= row < len(visible):
+            item = visible[row]
+            if item.kind not in ("video", "sub"):
+                item.selected = False
+            else:
                 item.selected = not item.selected
-                self.refresh()
+            self.refresh(reanalyze=False)
 
     def _visible_items(self):
         filt = self.filter_edit.text().lower().strip()
@@ -1529,7 +1783,7 @@ class MainWindow(QMainWindow):
             )
         elif self.sort_combo.currentText() == "Módosítás dátuma":
             order.sort(
-                key=lambda x: os.path.getmtime(self.items[x].path)
+                key=lambda x: getattr(self.items[x], "mtime_ns", 0) or 0
             )
         else:
             order.sort(
@@ -1547,6 +1801,7 @@ class MainWindow(QMainWindow):
             item = self.items[idx]
             if filt and filt not in (
                 Path(item.path).name + " " +
+                str(self._source_path(item)) + " " +
                 item.status + " " + item.group
             ).lower():
                 continue
@@ -1570,6 +1825,7 @@ class MainWindow(QMainWindow):
 
         open_action = menu.addAction("Megnyitás")
         folder_action = menu.addAction("Mappa megnyitása")
+        copy_path_action = menu.addAction("Forrásútvonal másolása")
         menu.addSeparator()
         select_action = menu.addAction("Kijelölés")
         deselect_action = menu.addAction("Kijelölés megszüntetése")
@@ -1580,12 +1836,16 @@ class MainWindow(QMainWindow):
             self.open_file(item.path)
         elif chosen == folder_action:
             self.open_folder(item.path)
+        elif chosen == copy_path_action:
+            QApplication.clipboard().setText(str(self._source_path(item)))
+            if hasattr(self, "status_label"):
+                self.status_label.setText(str(self._source_path(item)))
         elif chosen == select_action:
-            item.selected = True
-            self.refresh()
+            item.selected = item.kind in ("video", "sub")
+            self.refresh(reanalyze=False)
         elif chosen == deselect_action:
             item.selected = False
-            self.refresh()
+            self.refresh(reanalyze=False)
 
     def open_file(self, path):
         if os.name == "nt":
@@ -1603,17 +1863,19 @@ class MainWindow(QMainWindow):
     # ---------- engine bridge ----------
 
     def _refresh_selection_status(self):
-        self.refresh()
+        self.refresh(reanalyze=False)
         if hasattr(self, "status_label"):
             selected=sum(i.selected for i in self.items)
             self.status_label.setText(f"Kijelölve: {selected} / {len(self.items)} fájl")
 
     def select_all_items(self):
-        for i in self.items: i.selected=True
+        for i in self.items:
+            i.selected = i.kind in ("video", "sub")
         self._refresh_selection_status()
 
     def select_none_items(self):
-        for i in self.items: i.selected=False
+        for i in self.items:
+            i.selected = False
         self._refresh_selection_status()
 
     def select_missing_items(self):
@@ -1629,9 +1891,10 @@ class MainWindow(QMainWindow):
                 if not item.new_name:
                     incomplete=True
                     break
-                target=(Path(self.output_dir)/item.new_name
-                        if self.output_mode == "Másolás kimeneti mappába és átnevezés"
-                        else Path(item.path).parent/item.new_name)
+                target = self.destination_for(item)
+                if target is None:
+                    incomplete = True
+                    break
                 try:
                     complete=target.is_file() and target.stat().st_size==self._source_path(item).stat().st_size
                 except OSError:
@@ -1640,7 +1903,7 @@ class MainWindow(QMainWindow):
                     incomplete=True
                     break
             for item in arr:
-                item.selected=incomplete
+                item.selected = bool(incomplete) and item.kind in ("video", "sub")
         self._refresh_selection_status()
 
     def analyze(self):
@@ -1649,12 +1912,12 @@ class MainWindow(QMainWindow):
             return
 
         if not self.title_value:
-            detected_title = common_title([Path(i.path).name for i in self.items])
+            detected_title = common_title([
+                Path(i.path).name for i in self.items
+                if i.kind in ("video", "sub")
+            ])
             if detected_title and self.mode_value != "Automatikus / Vegyes":
-                self.title_edit.blockSignals(True)
-                self.title_edit.setText(detected_title)
-                self.title_edit.blockSignals(False)
-                self.title_value = detected_title
+                self._set_title_programmatic(detected_title, manual=False)
 
         global_title = self.title_value.strip()
         video_items = [i for i in self.items if i.kind == "video"]
@@ -1677,145 +1940,61 @@ class MainWindow(QMainWindow):
         if hasattr(self, "detected_series_label"):
             self.detected_series_label.setText("\n".join(detected_parts) if detected_parts else "Nem sikerült címet felismerni.")
 
-        multi_series = (
-            self.mode_value in {"Sorozat", "Automatikus / Vegyes"}
-            and len(series_titles) > 1
+        apply_item_target_names(
+            self.items,
+            NamingContext(
+                mode=self.mode_value,
+                template=self.template_value,
+                normalize=self.normalize_cb.isChecked(),
+                title_manual=self.title_manual,
+                global_title=global_title,
+            ),
         )
 
-        for item in self.items:
-            item.new_name = ""
-            item.status = "Ellenőrzést igényel"
-            item.note = ""
-
-            is_series_item = (
-                item.season is not None
-                and item.episode is not None
-                and item.confidence == "high"
-            )
-
-            if self.mode_value == "Sorozat" or (self.mode_value == "Automatikus / Vegyes" and is_series_item):
-                if not is_series_item:
-                    item.note = "Nem sikerült megbízható évad/epizód azonosítás"
-                    continue
-                render_title = item.title.strip() if (multi_series or self.mode_value == "Automatikus / Vegyes") else (global_title or item.title.strip())
-                if not render_title:
-                    item.note = "Nincs megadható sorozatnév"
-                    continue
-                item.group = item.group or f"{render_title.lower()}|S{item.season:02d}E{item.episode:02d}"
-                template = self.template_value
-            elif self.mode_value == "Film" or (self.mode_value == "Automatikus / Vegyes" and not is_series_item):
-                render_title = item.title.strip() or global_title
-                if not render_title:
-                    item.note = "Nem sikerült felismerni a film nevét"
-                    continue
-                title_key = re.sub(r'[^a-z0-9]+', '.', render_title.lower()).strip('.')
-                item.group = "FILM:" + title_key
-                template = "{CIM}" if self.mode_value == "Automatikus / Vegyes" else self.template_value
-            else:
-                item.note = "Nem támogatott feldolgozási mód"
-                continue
-
-            item.new_name = render_template(
-                template, item, render_title,
-                self.normalize_cb.isChecked()
-            )
-            item.status = "OK"
-
-        groups = {}
-        for item in self.items:
-            groups.setdefault(item.group, []).append(item)
-
-        for group, arr in groups.items():
-            vids = [x for x in arr if x.kind == "video"]
-            subs = [x for x in arr if x.kind == "sub"]
-
-            if not vids or not subs:
-                for item in arr:
-                    item.status = "Felirat nélkül" if item.kind == "video" else "Videó nélkül"
-                    item.note = "Nincs ugyanahhoz a címhez tartozó videó + felirat pár"
-                continue
-
-            # Ha azonos évad/epizód van, de a videó és a felirat címe eltér,
-            # ne hiányzó párként, hanem nem egyező párként jelezzük.
-            if not vids or not subs:
-                for other_group, other_arr in groups.items():
-                    if other_group == group:
-                        continue
-                    other_vids = [x for x in other_arr if x.kind == "video"]
-                    other_subs = [x for x in other_arr if x.kind == "sub"]
-                    if vids and other_subs and any(
-                        v.season == sub.season and v.episode == sub.episode
-                        for v in vids for sub in other_subs
-                    ):
-                        for x in vids:
-                            x.status = "Nem egyező pár"
-                            x.note = f"A felirat másik címhez tartozik: {other_subs[0].title}"
-                        for x in other_subs:
-                            x.status = "Nem egyező pár"
-                            x.note = f"A videó másik címhez tartozik: {vids[0].title}"
-                    elif subs and other_vids and any(
-                        v.season == sub.season and v.episode == sub.episode
-                        for v in other_vids for sub in subs
-                    ):
-                        for x in subs:
-                            x.status = "Nem egyező pár"
-                            x.note = f"A videó másik címhez tartozik: {other_vids[0].title}"
-                        for x in other_vids:
-                            x.status = "Nem egyező pár"
-                            x.note = f"A felirat másik címhez tartozik: {subs[0].title}"
-
-            hu = [x for x in subs if x.lang == "hu" and not x.variant]
-            if not hu:
-                for item in arr:
-                    if item.kind == "video" and item.status == "OK":
-                        item.note = "Nincs sima HU felirat"
-            if len(hu) > 1:
-                for item in arr:
-                    item.status = "Ellenőrzést igényel"
-                    item.note = "Több sima HU felirat ugyanahhoz a címhez"
+        disambiguate_subtitle_target_names(self.items)
+        apply_pair_group_status(self.items)
 
         if self.conflicts_cb.isChecked():
-            targets = {}
-            for item in self.items:
-                if item.status != "OK" or not item.selected:
-                    continue
-                if self.output_mode == "Másolás kimeneti mappába és átnevezés":
-                    base = Path(self.output_dir) if self.output_dir else Path()
-                    key_path = base / item.new_name
-                else:
-                    key_path = self._source_path(item).parent / item.new_name
-                try:
-                    key = os.path.normcase(str(key_path.resolve()))
-                except OSError:
-                    key = os.path.normcase(str(key_path))
-                targets.setdefault(key, []).append(item)
+            apply_destination_conflicts(
+                self.items, self.destination_for, self._source_path
+            )
 
-            for key, conflict_items in targets.items():
-                if len(conflict_items) > 1:
-                    for item in conflict_items:
-                        item.status = "Névütközés"
-                        item.copy_status = "Névütközés"
-                        item.copy_percent = 0
-                        item.note = "Több fájl ugyanarra a célra kerülne"
+        self._apply_completion_status()
 
-            for item in self.items:
-                if item.status != "OK" or not item.selected:
-                    continue
-                if self.output_mode == "Másolás kimeneti mappába és átnevezés":
-                    key_path = (Path(self.output_dir) if self.output_dir else Path()) / item.new_name
-                else:
-                    key_path = self._source_path(item).parent / item.new_name
-                try:
-                    same = os.path.normcase(str(self._source_path(item).resolve())) == os.path.normcase(str(key_path.resolve()))
-                except OSError:
-                    same = os.path.normcase(str(item.path)) == os.path.normcase(str(key_path))
-                if key_path.exists() and not same:
-                    # Valódi célütközés: az elem nem feldolgozható,
-                    # a meglévő célfájlt a program soha nem írja felül.
-                    item.status = "Névütközés"
-                    item.copy_status = "Névütközés"
-                    item.copy_percent = 0
-                    item.note = "A célfájl már létezik – a program nem írta felül"
+    def destination_for(self, item):
+        """Az Item aktuális kimeneti mód szerinti célfájlja, vagy None.
+
+        Másolás: output_dir / new_name
+        Helyben: forrásmappa / new_name  (_source_path, nem a másolás utáni path)
+        """
+        raw = getattr(item, "new_name", None)
+        if not raw:
+            return None
+        name = Path(raw).name
+        if not name:
+            return None
+        if self.output_mode == "Másolás kimeneti mappába és átnevezés":
+            if not str(getattr(self, "output_dir", "") or "").strip():
+                return None
+            try:
+                return Path(self.output_dir).resolve() / name
+            except OSError:
+                return Path(self.output_dir) / name
+        return self._source_path(item).parent / name
+
+    def _intended_destination(self, item):
+        return self.destination_for(item)
+
+    def _destination_matches_output(self, item):
+        return destination_matches_output(
+            item, self.destination_for, self._source_path
+        )
+
+    def _apply_completion_status(self):
+        """A 'Kész' a fizikai célfájl meglétét jelenti, nem a név OK státuszát."""
+        apply_completion_status(
+            self.items, self.destination_for, self._source_path
+        )
 
     def _batch_summary(self):
         series = {}
@@ -1833,7 +2012,7 @@ class MainWindow(QMainWindow):
             else:
                 films.setdefault(key, title)
 
-        ok = sum(i.status == "OK" for i in self.items)
+        ok = sum(i.status in {"OK", "Kész"} for i in self.items)
         return {
             "series_count": len(series),
             "film_count": len(films),
@@ -1847,7 +2026,13 @@ class MainWindow(QMainWindow):
         }
 
     def _checkbox_changed(self, item, state):
+        if getattr(self, "_syncing_table", False):
+            return
         checked = state == Qt.CheckState.Checked.value
+        if item.kind not in ("video", "sub"):
+            item.selected = False
+            self.refresh(reanalyze=False)
+            return
         item.selected = checked
         if checked and item.group:
             # A normál videó/felirat pár automatikusan együtt kijelölhető.
@@ -1868,13 +2053,30 @@ class MainWindow(QMainWindow):
             f"{len(self.items)} fájl | kijelölve: "
             f"{sum(i.selected for i in self.items)}"
         )
-        self.refresh()
+        self.refresh(reanalyze=False)
 
     def _copy_state(self, item):
         return getattr(item, "copy_status", "Várakozik")
 
     def _copy_percent(self, item):
         return int(getattr(item, "copy_percent", 0) or 0)
+
+    def _set_progress_cell(self, row, item, state):
+        """Folyamat: szöveg, amíg nincs aktív másolás — nagy listánál nincs 1000 QProgressBar."""
+        self.table.removeCellWidget(row, 9)
+        if state == "Másolás...":
+            bar = QProgressBar()
+            bar.setRange(0, 100)
+            bar.setValue(self._copy_percent(item))
+            bar.setTextVisible(True)
+            bar.setFormat("%p%")
+            self.table.setCellWidget(row, 9, bar)
+            return
+        text = "100%" if state in {"Átmásolva", "Kész"} else "—"
+        cell = QTableWidgetItem(text)
+        src = str(self._source_path(item))
+        cell.setToolTip(src)
+        self.table.setItem(row, 9, cell)
 
     def _update_copy_row(self, item):
         if not hasattr(self, "table"):
@@ -1900,87 +2102,95 @@ class MainWindow(QMainWindow):
             state_item.setForeground(QColor(fg))
             state_item.setBackground(QColor(bg))
             state_item.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
-        self.table.setItem(row,7,state_item)
-        bar=QProgressBar()
-        bar.setRange(0,100)
-        bar.setValue(self._copy_percent(item))
-        bar.setTextVisible(True)
-        if state == "Másolás...":
-            bar.setFormat("%p%")
-        elif state == "Átmásolva":
-            bar.setFormat("100%")
-        else:
-            bar.setFormat("—")
-        self.table.setCellWidget(row,8,bar)
+        self.table.setItem(row, 8, state_item)
+        self._set_progress_cell(row, item, state)
         QApplication.processEvents()
 
-    def refresh(self):
+    def refresh(self, reanalyze=True):
+        """Táblázat, szűrés, preview. Az analyze csak reanalyze=True esetén fut.
+
+        Alapértelmezés True a kompatibilitás miatt (add_paths, mód, undo, másolás).
+        Szűrés, rendezés, kijelölés-újrarajzolás: reanalyze=False.
+        """
         if not hasattr(self, "table"):
             return
 
-        self.analyze()
+        if reanalyze:
+            self.analyze()
         visible=self._visible_items()
-        self.table.setRowCount(0)
         has_items = bool(visible)
         self.empty_state.setVisible(not has_items)
         self.table.setVisible(has_items)
 
-        for item in visible:
-            row=self.table.rowCount()
-            self.table.insertRow(row)
-            series=item.title.strip() or "Ismeretlen"
-            season=f"S{item.season:02d}" if item.season is not None else "—"
-            episode=f"E{item.episode:02d}" if item.episode is not None else "—"
-            # Valódi, kattintható kijelölő a sorhoz.
-            check = QCheckBox()
-            check.setChecked(bool(item.selected))
-            check.setToolTip("A sor kijelölése / kijelölés megszüntetése")
-            check.stateChanged.connect(
-                lambda state, obj=item: self._checkbox_changed(obj, state)
-            )
-            holder = QWidget()
-            holder_layout = QHBoxLayout(holder)
-            holder_layout.setContentsMargins(0, 0, 0, 0)
-            holder_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            holder_layout.addWidget(check)
-            self.table.setCellWidget(row, 0, holder)
+        self._syncing_table = True
+        self.table.setUpdatesEnabled(False)
+        try:
+            self.table.setRowCount(len(visible))
+            for row, item in enumerate(visible):
+                series=item.title.strip() or "Ismeretlen"
+                season=f"S{item.season:02d}" if item.season is not None else "—"
+                episode=f"E{item.episode:02d}" if item.episode is not None else "—"
+                # Valódi, kattintható kijelölő a sorhoz.
+                check = QCheckBox()
+                check.setChecked(bool(item.selected))
+                check.setToolTip("A sor kijelölése / kijelölés megszüntetése")
+                check.stateChanged.connect(
+                    lambda state, obj=item: self._checkbox_changed(obj, state)
+                )
+                holder = QWidget()
+                holder_layout = QHBoxLayout(holder)
+                holder_layout.setContentsMargins(0, 0, 0, 0)
+                holder_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                holder_layout.addWidget(check)
+                self.table.setCellWidget(row, 0, holder)
 
-            values=[
-                series, season, episode,
-                "videó" if item.kind == "video" else "felirat",
-                Path(item.path).name, item.new_name or "—",
-                self._copy_state(item)
-            ]
-            for col,value in enumerate(values, start=1):
-                cell = QTableWidgetItem(value)
-                if col == 7:
-                    state = self._copy_state(item)
-                    styles = {
-                        "Már létezik": ("#b71c1c", "#ffebee"),
-                        "Névütközés": ("#b71c1c", "#ffebee"),
-                        "Hiba": ("#b71c1c", "#ffebee"),
-                        "Nem fért el": ("#e65100", "#fff3e0"),
-                        "Megszakítva": ("#8e0000", "#ffebee"),
-                        "Átmásolva": ("#1b5e20", "#e8f5e9"),
-                    }
-                    if state in styles:
-                        fg, bg = styles[state]
-                        cell.setForeground(QColor(fg))
-                        cell.setBackground(QColor(bg))
-                        cell.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
-                self.table.setItem(row,col,cell)
-            bar=QProgressBar()
-            bar.setRange(0,100)
-            bar.setValue(self._copy_percent(item))
-            bar.setTextVisible(True)
-            state=self._copy_state(item)
-            if state == "Másolás...":
-                bar.setFormat("%p%")
-            elif state == "Átmásolva":
-                bar.setFormat("100%")
-            else:
-                bar.setFormat("—")
-            self.table.setCellWidget(row,8,bar)
+                if item.kind == "video":
+                    kind_label = "videó"
+                elif item.kind == "sub":
+                    kind_label = "felirat"
+                else:
+                    kind_label = "egyéb"
+                orig_name = Path(item.path).name
+                src_path = str(self._source_path(item))
+                size_text = format_size_bytes(getattr(item, "size_bytes", None))
+                values=[
+                    series, season, episode,
+                    kind_label,
+                    size_text,
+                    orig_name,
+                    item.new_name or "—",
+                    self._copy_state(item)
+                ]
+                for col,value in enumerate(values, start=1):
+                    cell = QTableWidgetItem(value)
+                    if col in (6, 7):
+                        cell.setToolTip(f"{orig_name}\n{src_path}")
+                    elif col == 5:
+                        exact = getattr(item, "size_bytes", None)
+                        if exact is not None:
+                            cell.setToolTip(f"{exact} B")
+                    else:
+                        cell.setToolTip(src_path)
+                    if col == 8:
+                        state = self._copy_state(item)
+                        styles = {
+                            "Már létezik": ("#b71c1c", "#ffebee"),
+                            "Névütközés": ("#b71c1c", "#ffebee"),
+                            "Hiba": ("#b71c1c", "#ffebee"),
+                            "Nem fért el": ("#e65100", "#fff3e0"),
+                            "Megszakítva": ("#8e0000", "#ffebee"),
+                            "Átmásolva": ("#1b5e20", "#e8f5e9"),
+                        }
+                        if state in styles:
+                            fg, bg = styles[state]
+                            cell.setForeground(QColor(fg))
+                            cell.setBackground(QColor(bg))
+                            cell.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+                    self.table.setItem(row,col,cell)
+                self._set_progress_cell(row, item, self._copy_state(item))
+        finally:
+            self.table.setUpdatesEnabled(True)
+            self._syncing_table = False
 
         self.status_label.setText(
             f"{len(self.items)} fájl | kijelölve: {sum(i.selected for i in self.items)}"
@@ -2003,10 +2213,15 @@ class MainWindow(QMainWindow):
                 if item.season is not None and item.episode is not None
                 else "—"
             )
+            kind_text = (
+                "videó" if item.kind == "video"
+                else "felirat" if item.kind == "sub"
+                else "egyéb"
+            )
             self.preview_text.append(
                 f"[{selected_mark}] {item.title.strip() or 'Ismeretlen'} — "
                 f"{season_text} — "
-                f"{'videó' if item.kind == 'video' else 'felirat'}\n"
+                f"{kind_text}\n"
                 f"    Eredeti: {Path(item.path).name}\n"
                 f"    → {item.new_name or '—'}\n"
                 f"    [{item.status}] {item.note} | "
@@ -2018,9 +2233,9 @@ class MainWindow(QMainWindow):
     def check(self):
         self.analyze()
         self.tabs.setCurrentWidget(self.preview_tab)
-        self.refresh()
+        self.refresh(reanalyze=False)
 
-        ok = sum(i.status == "OK" for i in self.items)
+        ok = sum(i.status in {"OK", "Kész"} for i in self.items)
         bad = len(self.items) - ok
 
         summary = self._batch_summary()
@@ -2028,7 +2243,7 @@ class MainWindow(QMainWindow):
         if len(summary["series_names"]) > 8:
             names += f", ... (+{len(summary['series_names']) - 8})"
 
-        issue_items = [i for i in self.items if i.status != "OK"]
+        issue_items = [i for i in self.items if i.status not in {"OK", "Kész"}]
 
         mixed_mode_note = ""
         if self.mode_value == "Sorozat" and summary["film_count"]:
@@ -2193,8 +2408,9 @@ class MainWindow(QMainWindow):
             pair.sort(key=lambda x: 0 if x.kind == "video" else 1)
             for item in pair:
                 old = self._source_path(item)
-                target_name = Path(item.new_name).name
-                new = destination / target_name if copy_mode else old.parent / target_name
+                new = self.destination_for(item)
+                if new is None:
+                    continue
                 try:
                     same = old.resolve() == new.resolve()
                 except OSError:
@@ -2392,23 +2608,13 @@ class MainWindow(QMainWindow):
                     new_path.parent.mkdir(parents=True, exist_ok=True)
                     try:
                         if copy_mode:
-                            tmp = Path(str(new_path) + ".part")
-                            if tmp.exists():
-                                tmp.unlink()
-                            total_size = max(1, old_path.stat().st_size)
-                            copied = 0
-                            with old_path.open("rb") as src_f, tmp.open("wb") as dst_f:
-                                while True:
-                                    chunk = src_f.read(4 * 1024 * 1024)
-                                    if not chunk:
-                                        break
-                                    dst_f.write(chunk)
-                                    copied += len(chunk)
-                                    pair_item.copy_percent = min(99, int(copied * 100 / total_size))
-                                    self._update_copy_row(pair_item)
-                            shutil.copystat(old_path, tmp)
-                            tmp.replace(new_path)
-                            stat = new_path.stat()
+                            def _on_copy_progress(copied, total_size, _item=pair_item):
+                                _item.copy_percent = min(99, int(copied * 100 / total_size))
+                                self._update_copy_row(_item)
+
+                            stat = copy_to_destination(
+                                old_path, new_path, progress=_on_copy_progress
+                            )
                             pending_history.append({
                                 "old": str(old_path),
                                 "new": str(new_path),
@@ -2441,19 +2647,9 @@ class MainWindow(QMainWindow):
 
                 if pair_failed:
                     # A már létrehozott célfájlokat visszavesszük.
-                    for made in reversed(pair_created):
-                        try:
-                            if made.exists():
-                                made.unlink()
-                        except OSError:
-                            pass
+                    rollback_copied_files(pair_created)
                     # Helyben átnevezésnél visszanevezzük az addig elkészült tagokat.
-                    for old_path, new_path in reversed(pair_renames):
-                        try:
-                            if new_path.exists():
-                                new_path.rename(old_path)
-                        except OSError:
-                            pass
+                    rollback_renamed_files(pair_renames)
                     for pair_item, _, _ in pair:
                         if pair_item.copy_status == "Másolás..." or pair_item.copy_status == "Átnevezés...":
                             pair_item.copy_status = "Hiba"
@@ -2670,30 +2866,52 @@ class MainWindow(QMainWindow):
             return
 
         if operation == "Másolás és átnevezés":
-            for change in changes:
-                new = Path(change["new"])
-                if not new.exists():
+            copy_check = verify_copy_undo(changes)
+            if copy_check is not None:
+                kind, path = copy_check
+                if kind == "missing":
                     QMessageBox.critical(self, "Visszaállítás nem biztonságos", "A kimeneti fájlok állapota megváltozott, ezért a műveletet nem hajtottam végre.")
-                    return
-                stat = new.stat()
-                if stat.st_size != change.get("size") or stat.st_mtime_ns != change.get("mtime_ns"):
-                    QMessageBox.critical(self, "Visszaállítás nem biztonságos", f"A fájl időközben megváltozott:\n{new}\n\nA program nem törölte.")
-                    return
+                else:
+                    QMessageBox.critical(self, "Visszaállítás nem biztonságos", f"A fájl időközben megváltozott:\n{path}\n\nA program nem törölte.")
+                return
             if QMessageBox.question(self, "Kimenet visszaállítása", f"{len(changes)} létrehozott fájl törlésére készülsz.\n\nAz eredeti fájlokat ez nem érinti.\n\nFolytatod?") != QMessageBox.StandardButton.Yes:
                 return
-            for change in reversed(changes):
-                new = Path(change["new"])
-                if new.exists():
-                    new.unlink()
+            apply_copy_undo(changes)
         else:
+            if not verify_inplace_undo(changes):
+                QMessageBox.critical(self, "Visszaállítás nem biztonságos", "A fájlállapot megváltozott, ezért a műveletet nem hajtottam végre.")
+                return
+            apply_inplace_undo(changes)
+
+        def path_key(value):
+            try:
+                return os.path.normcase(str(Path(value).resolve()))
+            except OSError:
+                return os.path.normcase(str(Path(value)))
+
+        for item in self.items:
+            item_keys = {
+                path_key(item.path),
+                path_key(self._source_path(item)),
+            }
+            restored = None
             for change in changes:
-                old = Path(change["old"])
-                new = Path(change["new"])
-                if not new.exists() or old.exists():
-                    QMessageBox.critical(self, "Visszaállítás nem biztonságos", "A fájlállapot megváltozott, ezért a műveletet nem hajtottam végre.")
-                    return
-            for change in reversed(changes):
-                Path(change["new"]).rename(change["old"])
+                if (
+                    path_key(change["new"]) in item_keys
+                    or path_key(change["old"]) in item_keys
+                ):
+                    restored = change["old"]
+                    break
+            if restored is None:
+                src = self._source_path(item)
+                if src.is_file() and not Path(item.path).is_file():
+                    restored = str(src)
+            if restored is None:
+                continue
+            item.path = restored
+            item.copy_status = "Várakozik"
+            item.copy_percent = 0
+            item.note = ""
 
         record["status"] = "Visszavonva"
         self.save_history()
@@ -2776,7 +2994,10 @@ class MainWindow(QMainWindow):
     # ---------- 0.6.0-TEST / Tesztlabor ----------
 
     def open_test_lab(self):
-        """Ideiglenes automata Tesztlabor megnyitása a 0.6.0-TEST verzióban."""
+        """Tesztlabor — csak DEV. Release/frozen buildben no-op."""
+        if not dev_tools_enabled():
+            return
+        from testing.test_runner import TestRunnerDialog
         dialog = TestRunnerDialog(self)
         dialog.show()
         dialog.raise_()
@@ -2784,7 +3005,9 @@ class MainWindow(QMainWindow):
         self._test_lab_dialog = dialog
 
     def open_patch_center(self):
-        """Tesztfázisú helyi Patch Center megnyitása."""
+        """Helyi Patch Center — csak DEV. Release/frozen: nincs Python-futtatás a GUI-ból."""
+        if not dev_tools_enabled():
+            return
         dialog = PatchCenterDialog(self)
         dialog.exec()
 
@@ -2917,23 +3140,21 @@ class MainWindow(QMainWindow):
         QMessageBox.information(
             self, "Frissítések keresése",
             f"Jelenlegi verzió: {APP_VERSION}\n\n"
-            "Az online frissítés-ellenőrzést a nyilvános GitHub/SourceForge "
-            "kiadás előtt kötjük be."
+            "Online frissítés-ellenőrzés nincs beépítve. "
+            "A program hordozható: a beállítások a program melletti data mappában vannak."
         )
 
     def report_bug(self):
         QMessageBox.information(
             self, "Hibajelentés",
-            "A hibajelentés helye elkészült.\n\n"
-            "A nyilvános kiadásban ez a GitHub/SourceForge hibabejelentő "
-            "oldalára fog vezetni."
+            "Online hibabejelentő nincs a programban.\n\n"
+            "Ha hibát tapasztalsz, jegyezd fel a műveletet és a fájlneveket."
         )
 
     def donate(self):
         QMessageBox.information(
             self, "Donate",
-            "A támogatási lehetőség helye elkészült.\n\n"
-            "A tényleges támogatási linket később adjuk meg."
+            "Jelenleg nincs beépített támogatási link."
         )
 
     def show_about(self):
@@ -3008,7 +3229,7 @@ class MainWindow(QMainWindow):
         self.template_edit.setText(
             "{CIM}.{SZEZON}{EPIZOD}"
         )
-        self.title_edit.clear()
+        self._set_title_programmatic("", manual=False)
         self.mode_combo.setCurrentText("Sorozat")
         self.normalize_cb.setChecked(True)
         self.lang_norm_cb.setChecked(True)

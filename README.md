@@ -1,32 +1,32 @@
-# Sorozat & film átnevező – 0.6.1-TEST
+# Sorozat & film átnevező – 0.6.1
 
-## Tiszta tesztprojekt
+Hordozható Windows program: videó- és feliratfájlok nevét hangolja össze, hogy a tévé megtalálja a feliratot.
 
-Ez a csomag új, önálló alap a további fejlesztéshez.
+Az alapfunkciókhoz nincs szükség internetre. A program nem írja át a fájlok tartalmát.
 
-### Első indítás
+## Felhasználói (portable) használat
 
-1. Csomagold ki a teljes ZIP-et.
-2. Nyisd meg a projekt gyökerét.
-3. Futtasd a `setup.bat` fájlt.
-4. Ha a SETUP SIKERES üzenet megjelenik, indítsd a `run_dev.bat` fájlt.
+1. Csomagold ki a program mappáját egy helyre.
+2. Indítsd a `SorozatEsFilmAtnevezo.exe` fájlt.
+3. Adj hozzá mappát vagy fájlokat, ellenőrizd az előnézetet, majd hagyd jóvá az átnevezést vagy másolást.
 
-Ha a `setup.bat` dupla kattintással nem marad nyitva, nyisd meg a projektmappát PowerShellben, és futtasd:
+A beállítások és az előzmény a program melletti `data` mappába kerülnek (`settings.json`, `history.json`). A mappa a géppel együtt mozgatható.
 
-```powershell
-.\setup.bat
-```
+Kimeneti exe build: `build_exe.bat` → `dist\SorozatEsFilmAtnevezo\`.
+
+## Fejlesztői futtatás
+
+1. Csomagold ki a teljes projektet.
+2. Futtasd a `setup.bat` fájlt.
+3. Indítsd a `run_dev.bat` fájlt.
+
+Fejlesztői módban a főablakban megjelenik a Tesztlabor és a Patch Center. Frozen / release buildben ezek nincsenek a felhasználói felületen.
 
 ### Mappák
 
 - `src` – főprogram
-- `TESTEK` – ide kerülnek az automata tesztek
+- `data` – hordozható beállítások és előzmény (futás közben jön létre)
+- `TESTEK` – automata tesztek
 - `Tesztadat_Generator/TESZT_KORNYEZET` – izolált tesztkörnyezet
-- `PATCH` – patch források és dokumentáció
-- `patches` – a program Patch gombja innen futtatja a helyi patchokat
-- `backups` – biztonsági mentések
+- `patches` – helyi patchok (csak fejlesztői Patch Center)
 - `docs` – projekt dokumentáció
-
-A Tesztlabor megmarad a tesztfázis részeként.
-
-A Patch Center jelenleg kizárólag helyi, saját Python patchokat futtat. Nyilvános kiadásban ugyanennek a felületnek a backendje később online Upgrade rendszerre cserélhető.

@@ -15,9 +15,9 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-ORIGINAL_APPDATA = os.environ.get("APPDATA")
-TEST_APPDATA_ROOT = Path(tempfile.mkdtemp(prefix="sr_gui_appdata_"))
-os.environ["APPDATA"] = str(TEST_APPDATA_ROOT)
+ORIGINAL_DATA = os.environ.get("SERIESRENAMER_DATA")
+TEST_DATA_ROOT = Path(tempfile.mkdtemp(prefix="sr_gui_data_"))
+os.environ["SERIESRENAMER_DATA"] = str(TEST_DATA_ROOT)
 
 from PySide6.QtWidgets import QApplication, QMessageBox
 
@@ -50,11 +50,11 @@ def make_case(root, *files):
 class GuiBase(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
-        if ORIGINAL_APPDATA is None:
-            os.environ.pop("APPDATA", None)
+        if ORIGINAL_DATA is None:
+            os.environ.pop("SERIESRENAMER_DATA", None)
         else:
-            os.environ["APPDATA"] = ORIGINAL_APPDATA
-        shutil.rmtree(TEST_APPDATA_ROOT, ignore_errors=True)
+            os.environ["SERIESRENAMER_DATA"] = ORIGINAL_DATA
+        shutil.rmtree(TEST_DATA_ROOT, ignore_errors=True)
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="sr_gui_history_"))
@@ -70,8 +70,9 @@ class GuiBase(unittest.TestCase):
         APP.processEvents()
 
         self.assertTrue(
-            self.win.data_dir.is_relative_to(TEST_APPDATA_ROOT),
-            f"A teszt nem izolált APPDATA-t használ: {self.win.data_dir}",
+            self.win.data_dir.is_relative_to(TEST_DATA_ROOT)
+            or self.win.data_dir.resolve() == TEST_DATA_ROOT.resolve(),
+            f"A teszt nem izolált data mappát használ: {self.win.data_dir}",
         )
 
     def tearDown(self):
@@ -149,7 +150,7 @@ class TestGuiHistoryUndo(GuiBase):
         self.assertEqual(record["status"], "Sikeres")
         self.assertEqual(len(record["changes"]), 2)
 
-        history_path = TEST_APPDATA_ROOT / "SeriesRenamer" / "history.json"
+        history_path = TEST_DATA_ROOT / "history.json"
         self.assertTrue(history_path.is_file())
         persisted = json.loads(history_path.read_text(encoding="utf-8"))
         self.assertEqual(len(persisted), 1)

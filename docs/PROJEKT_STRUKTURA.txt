@@ -1,32 +1,49 @@
-SorozatRenamero_0.6.1-TEST_TISZTA
+Sorozat & film átnevező — 0.6.1
+│
+│  Hordozható Windows PySide6 alkalmazás: videó- és feliratfájlok
+│  párosítása, előnézete, átnevezése vagy másolása.
+│
+│  Release: felhasználói verzió 0.6.1, portable data/ az exe/projekt mellett.
+│  Frozen buildben a Tesztlabor és a Patch Center nincs a főablakban.
 │
 ├── src/
-│   ├── main.py
-│   ├── version.py
-│   ├── renamer_engine.py
+│   ├── main.py                 # GUI, orchestration, settings/history, copy/undo UI
+│   ├── renamer_engine.py       # parse, sablon, párosítás, célútvonal, másolás/undo
+│   ├── version.py              # APP_NAME, APP_VERSION=0.6.1, APP_VERSION_DEV
 │   └── testing/
-│       ├── __init__.py
-│       └── test_runner.py
+│       └── test_runner.py      # Tesztlabor (csak DEV; nincs __init__.py)
 │
 ├── TESTEK/
-│   └── ide másold a tesztscripteket
+│   ├── FUTTATAS_OSSZES_TEST.py     # TEST_*.py — 53 fájl
+│   ├── README.md / README.txt
+│   ├── 01_ALAP/
+│   ├── 02_FELISMERES/
+│   ├── 03_FELIRAT/
+│   ├── 04_KIMENET/
+│   ├── 05_KIJELOLES/
+│   ├── 06_HIBAK_ES_BIZTONSAG/
+│   ├── 07_ELOZMENY/
+│   ├── 08_GUI_INTEGRACIO/          # GUI_*.py + FUTTATAS_GUI_TESTEK.py — 21 fájl
+│   ├── 09_VALOS_FAJLNEVEK/         # TEST_70–76 + futtató — 7 fájl
+│   └── 10_ENGINE_STABILIZALAS/     # TEST_80–96 (engine + portable/release kapuk)
 │
-├── PATCH/
-│   └── ide másold/archiváld a patchokat
-│
-├── patches/
-│   └── ide kerülnek a Patch gombbal futtatható saját patchok
-│
+├── TEST_ADATOK/                    # kézi mintafájlok (nem a futtatók bemenete)
+├── patches/                        # helyi patchok (csak fejlesztői Patch Center)
 ├── Tesztadat_Generator/
-│   └── TESZT_KORNYEZET/
-│       └── AUTOMATA_TESZTEK/
-│
-├── backups/
+│   └── TESZT_KORNYEZET/            # Tesztlabor izolált környezet
 ├── docs/
+│   └── PROJEKT_STRUKTURA.txt       # ez a fájl
+├── backups/                        # .gitignore
 ├── setup.bat
-├── run_dev.bat
-├── start_testlab.bat
-├── build_exe.bat
-├── requirements.txt
+├── run_dev.bat                     # .venv → src/main.py
+├── build_exe.bat                   # PyInstaller → dist/SorozatEsFilmAtnevezo/
+├── requirements.txt                # PySide6>=6.7,<7
 ├── README.md
-└── .gitignore
+└── .gitignore                      # többek közt data/, dist/, build/, *.spec
+│
+│  Runtime (nem a repo): data/settings.json, data/history.json
+│    Frozen: <exe mappa>/data
+│    Fejlesztés: <projekt gyökér>/data
+│    Tesztek: SERIESRENAMER_DATA, ha be van állítva
+│
+│  Nincs a gyökérben: start_testlab.bat, PATCH/, src/testing/__init__.py
