@@ -101,6 +101,7 @@ class TestM5Allapot(unittest.TestCase):
         QMessageBox.critical = staticmethod(
             lambda *args, **kwargs: QMessageBox.StandardButton.Ok
         )
+        self.win._confirm_rename = lambda *args, **kwargs: True
 
     def set_copy_mode(self, output):
         self.win.output_mode = "Másolás kimeneti mappába és átnevezés"
@@ -265,7 +266,7 @@ class TestM5Allapot(unittest.TestCase):
         )
         self.assertEqual(self.by_name("ION10").new_name, "Invasion.S01E01.srt")
         self.assertEqual(self.by_name("Show.S02E01.hu.srt").new_name, "Show.S02E01.srt")
-        self.assertEqual(self.by_name("forced").new_name, "Show.S02E01.forced.srt")
+        self.assertEqual(self.by_name("forced").new_name, "Show.S02E01.hu.forced.srt")
 
 
 if __name__ == "__main__":

@@ -52,6 +52,10 @@ class _Drop:
 
 class TestGuiM6InputLista(unittest.TestCase):
     def setUp(self):
+        self.original_data = os.environ.get("SERIESRENAMER_DATA")
+        self.data_dir = Path(tempfile.mkdtemp(prefix="sr_m6_gui_data_"))
+        self.out_dir = Path(tempfile.mkdtemp(prefix="sr_m6_gui_out_"))
+        os.environ["SERIESRENAMER_DATA"] = str(self.data_dir)
         self.tmp = Path(tempfile.mkdtemp(prefix="sr_m6_gui_"))
         self.message_box_methods = {
             "question": QMessageBox.question,
@@ -64,6 +68,7 @@ class TestGuiM6InputLista(unittest.TestCase):
         QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes)
         self.win = MainWindow()
         self.win.show_welcome = False
+        self.win.output_dir = str(self.out_dir)
         self.win.show()
         APP.processEvents()
 
@@ -73,7 +78,13 @@ class TestGuiM6InputLista(unittest.TestCase):
         self.win.close()
         self.win.deleteLater()
         APP.processEvents()
+        if self.original_data is None:
+            os.environ.pop("SERIESRENAMER_DATA", None)
+        else:
+            os.environ["SERIESRENAMER_DATA"] = self.original_data
         shutil.rmtree(self.tmp, ignore_errors=True)
+        shutil.rmtree(self.data_dir, ignore_errors=True)
+        shutil.rmtree(self.out_dir, ignore_errors=True)
 
     def add(self, *paths):
         self.win.add_paths([Path(p) for p in paths])
@@ -85,8 +96,11 @@ class TestGuiM6InputLista(unittest.TestCase):
             self.win.table.horizontalHeaderItem(i).text()
             for i in range(self.win.table.columnCount())
         ]
-        self.assertEqual(headers[5], "Méret")
-        self.assertEqual(headers[6], "Eredeti")
+        self.assertEqual(headers[1], "Eredeti")
+        self.assertEqual(headers[2], "Új név")
+        self.assertEqual(headers[3], "Állapot")
+        self.assertIn("Méret", headers)
+        self.assertEqual(headers[headers.index("Méret")], "Méret")
 
     def test_add_files_and_size_cell(self):
         src = make_case(
@@ -96,10 +110,22 @@ class TestGuiM6InputLista(unittest.TestCase):
         )
         self.add(src / "Show.S01E01.mkv", src / "Show.S01E01.hu.srt")
         self.assertEqual(self.win.table.rowCount(), 2)
-        size_cell = self.win.table.item(0, 5)
+        headers = [
+            self.win.table.horizontalHeaderItem(i).text()
+            for i in range(self.win.table.columnCount())
+        ]
+        size_cell = self.win.table.item(0, headers.index("Méret"))
+        orig_cell = self.win.table.item(0, headers.index("Eredeti"))
+        status_cell = self.win.table.item(0, headers.index("Állapot"))
         self.assertIsNotNone(size_cell)
         self.assertTrue(size_cell.text().endswith(("B", "KB", "MB", "GB")))
         self.assertIn("B", size_cell.toolTip())
+        self.assertIn("Show.S01E01", orig_cell.text())
+        self.assertTrue(
+            "Rendben" in status_cell.text()
+            or "Ellenőrzés" in status_cell.text()
+            or "feldolgoz" in status_cell.text().lower()
+        )
 
     def test_folder_and_duplicate_folder(self):
         src = make_case(self.tmp / "dir", ("Show.S01E01.mkv", VIDEO))
@@ -118,11 +144,15 @@ class TestGuiM6InputLista(unittest.TestCase):
         self.win._ingest_user_paths([src])
         APP.processEvents()
         self.assertEqual(len(self.win.items), 2)
+        orig_col = [
+            self.win.table.horizontalHeaderItem(i).text()
+            for i in range(self.win.table.columnCount())
+        ].index("Eredeti")
         row = next(
             r for r in range(self.win.table.rowCount())
-            if long_name in (self.win.table.item(r, 6).text() if self.win.table.item(r, 6) else "")
+            if long_name in (self.win.table.item(r, orig_col).text() if self.win.table.item(r, orig_col) else "")
         )
-        tip = self.win.table.item(row, 6).toolTip()
+        tip = self.win.table.item(row, orig_col).toolTip()
         self.assertIn(long_name, tip)
         self.assertIn("nested", tip.replace("\\", "/"))
 

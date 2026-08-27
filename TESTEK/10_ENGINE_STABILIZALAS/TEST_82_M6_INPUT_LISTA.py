@@ -53,6 +53,10 @@ class _Drop:
 
 class TestM6InputLista(unittest.TestCase):
     def setUp(self):
+        self.original_data = os.environ.get("SERIESRENAMER_DATA")
+        self.data_dir = Path(tempfile.mkdtemp(prefix="sr_m6_data_"))
+        self.out_dir = Path(tempfile.mkdtemp(prefix="sr_m6_out_"))
+        os.environ["SERIESRENAMER_DATA"] = str(self.data_dir)
         self.tmp = Path(tempfile.mkdtemp(prefix="sr_m6_"))
         self.message_box_methods = {
             "question": QMessageBox.question,
@@ -65,6 +69,7 @@ class TestM6InputLista(unittest.TestCase):
         QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes)
         self.win = MainWindow()
         self.win.show_welcome = False
+        self.win.output_dir = str(self.out_dir)
         self.win.show()
         APP.processEvents()
 
@@ -74,7 +79,13 @@ class TestM6InputLista(unittest.TestCase):
         self.win.close()
         self.win.deleteLater()
         APP.processEvents()
+        if self.original_data is None:
+            os.environ.pop("SERIESRENAMER_DATA", None)
+        else:
+            os.environ["SERIESRENAMER_DATA"] = self.original_data
         shutil.rmtree(self.tmp, ignore_errors=True)
+        shutil.rmtree(self.data_dir, ignore_errors=True)
+        shutil.rmtree(self.out_dir, ignore_errors=True)
 
     def add(self, *paths):
         self.win.add_paths([Path(p) for p in paths])
@@ -209,7 +220,7 @@ class TestM6InputLista(unittest.TestCase):
         src = make_case(self.tmp / "long", (long_name, VIDEO))
         self.add(src / long_name)
         self.assertEqual(Path(self.win.items[0].path).name, long_name)
-        cell = self.win.table.item(0, 6)
+        cell = self.win.table.item(0, 1)
         self.assertIsNotNone(cell)
         self.assertIn(long_name, cell.toolTip())
 
@@ -220,12 +231,12 @@ class TestM6InputLista(unittest.TestCase):
         item = self.win.items[0]
         source = str(self.win._source_path(item))
         self.assertEqual(file_identity_key(source), file_identity_key(p))
-        cell = self.win.table.item(0, 6)
+        cell = self.win.table.item(0, 1)
         self.assertIn(p.name, cell.toolTip())
         self.assertTrue(
             str(p) in cell.toolTip() or str(p.resolve()) in cell.toolTip()
         )
-        self.win._table_double_clicked(0, 6)
+        self.win._table_double_clicked(0, 1)
         self.assertIn(str(p.name), self.win.status_label.text())
 
     def _make_n_videos(self, n, folder):

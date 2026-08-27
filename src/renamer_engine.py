@@ -25,10 +25,47 @@ LANGS = {
     'sk':'sk','slo':'sk','slk':'sk','slovak':'sk',
     'ro':'ro','rum':'ro','ron':'ro','romanian':'ro',
 }
+# L1 setting-cső. L2.1: pair-status. L2.2: C.1. L2.3: checkbox/rename partner. L2.4: B fájlnév-stratégia.
+DEFAULT_SUBTITLE_PREF = 'hu'
+SUBTITLE_PREF_CHOICES = ('hu', 'de', 'en', 'es')
+
+
+def normalize_subtitle_pref(value):
+    """Whitelist: hu/de/en/es. Hiányzó vagy érvénytelen érték → hu."""
+    code = str(value or '').strip().lower()
+    if code in SUBTITLE_PREF_CHOICES:
+        return code
+    return DEFAULT_SUBTITLE_PREF
+
+
 EP_PATTERNS = [
     re.compile(r'(?i)\b(S\d{1,2})[ ._-]*E(\d{1,3})\b'),
     re.compile(r'(?i)\b(\d{1,2})x(\d{1,3})\b'),
 ]
+# Gyenge hint: csak a közvetlen szülőmappa, csak egyértelmű név. Soha nem írja felül EP_PATTERNS-t.
+FOLDER_SEASON_PATTERNS = [
+    re.compile(r'(?i)^season[ ._-]*(\d{1,2})$'),
+    re.compile(r'(?i)^s(\d{1,2})$'),
+]
+EPISODE_ONLY_IN_FILENAME = re.compile(r'(?i)\bE(\d{1,3})\b')
+
+
+def parse_parent_folder_season(folder_name):
+    """Egyértelmű évad a szülőmappa nevéből, vagy None.
+
+    Első verzió: Season 01 / Season 1 / S01. Nem: 01, Season, Season 01 Complete, Évad 1.
+    """
+    name = (folder_name or '').strip()
+    if not name:
+        return None
+    for pat in FOLDER_SEASON_PATTERNS:
+        m = pat.fullmatch(name)
+        if m:
+            n = int(m.group(1))
+            if 1 <= n <= 99:
+                return n
+    return None
+
 
 @dataclass
 class Item:
@@ -80,6 +117,19 @@ def parse_item(path):
             confidence = 'high'
             break
 
+    folder_hint = False
+    if season is None:
+        folder_season = parse_parent_folder_season(p.parent.name)
+        if folder_season is not None:
+            em = EPISODE_ONLY_IN_FILENAME.search(stem)
+            if em:
+                epn = int(em.group(1))
+                if 1 <= epn <= 999:
+                    season = folder_season
+                    episode = epn
+                    confidence = 'high'
+                    folder_hint = True
+
     tokens = _tokens(stem)
     lang = None
     variant = None
@@ -97,6 +147,8 @@ def parse_item(path):
     for tok in tokens:
         low = tok.lower()
         if re.fullmatch(r'(?i)s\d{1,2}e\d{1,3}', tok) or re.fullmatch(r'(?i)\d{1,2}x\d{1,3}', tok):
+            break
+        if folder_hint and re.fullmatch(r'(?i)e\d{1,3}', tok):
             break
         if low in TECH_TOKENS or low in LANGS:
             continue
@@ -142,7 +194,7 @@ def _clean_render_title(title, item):
     return result or norm_sep(str(title))
 
 
-def render_template(template, item, title, normalize=True):
+def render_template(template, item, title, normalize=True, subtitle_pref=DEFAULT_SUBTITLE_PREF):
     season2 = f'S{item.season:02d}' if item.season is not None else ''
     ep2 = f'E{item.episode:02d}' if item.episode is not None else ''
     lang = item.lang or ''
@@ -161,10 +213,14 @@ def render_template(template, item, title, normalize=True):
         out = re.sub(r'\.{2,}', '.', out)
         out = re.sub(r'\s{2,}', ' ', out)
     out = out.strip(' .')
-    # Fájlnév-kompatibilitás, nem pairing: hu token a sablon nélkül nem kerül a névbe.
-    # Más felismert nyelvek (en, de, fr, …) azonos szabály szerint kapnak nyelvi utótagot.
-    # A {CIM} / pairing ettől független; a nyelv nem sorozatkulcs.
-    if item.kind == 'sub' and lang and lang != 'hu' and '{NYELV}' not in template:
+    # B stratégia: preferált sima felirat = tiszta alapnév.
+    # Minden más felirat, ha van nyelv és nincs {NYELV}: .lang, variant esetén .variant.
+    if (
+        item.kind == 'sub'
+        and lang
+        and '{NYELV}' not in template
+        and not is_preferred_plain_sub(item, subtitle_pref)
+    ):
         out += '.' + lang
         if item.variant:
             out += '.' + item.variant
@@ -217,6 +273,7 @@ class NamingContext:
     normalize: bool = True
     title_manual: bool = False
     global_title: str = ''
+    subtitle_pref: str = DEFAULT_SUBTITLE_PREF
 
 
 def apply_item_target_names(items, ctx):
@@ -230,6 +287,7 @@ def apply_item_target_names(items, ctx):
     template_value = ctx.template
     normalize = bool(ctx.normalize)
     title_manual = bool(ctx.title_manual)
+    pref = getattr(ctx, 'subtitle_pref', DEFAULT_SUBTITLE_PREF)
 
     for item in items:
         item.new_name = ''
@@ -280,16 +338,21 @@ def apply_item_target_names(items, ctx):
             continue
 
         item.new_name = render_template(
-            template, item, render_title, normalize
+            template, item, render_title, normalize, subtitle_pref=pref
         )
         item.status = 'OK'
 
 
-def apply_pair_group_status(items):
-    """Videó+felirat group státusz: hiányos pár, M1.1 mismatch, sima HU megjegyzés.
+def is_preferred_plain_sub(item, pref="hu"):
+    """Preferált nyelvű, variant nélküli felirat. Pair-status és B fájlnév-stratégia közös feltétele."""
+    return item.kind == "sub" and item.lang == pref and not item.variant
+
+
+def apply_pair_group_status(items, pref="hu"):
+    """Videó+felirat group státusz: hiányos pár, M1.1 mismatch, sima pref megjegyzés.
 
     A pairing kulcsa az Item.group (cím+epizód), nem a felirat nyelve.
-    lang == 'hu' csak a meglévő „sima HU” note/státusz szabályokhoz kell.
+    A sima preferált felirat (default: hu) a note/státusz szabályokhoz kell.
     Nem módosít: path, source_path, new_name, selected, group, copy_*.
     """
     groups = {}
@@ -334,15 +397,16 @@ def apply_pair_group_status(items):
                     item.note = "Nincs ugyanahhoz a címhez tartozó videó + felirat pár"
             continue
 
-        hu = [x for x in subs if x.lang == "hu" and not x.variant]
-        if not hu:
+        preferred = [x for x in subs if is_preferred_plain_sub(x, pref)]
+        label = str(pref).upper()
+        if not preferred:
             for item in arr:
                 if item.kind == "video" and item.status == "OK":
-                    item.note = "Nincs sima HU felirat"
-        if len(hu) > 1:
+                    item.note = f"Nincs sima {label} felirat"
+        if len(preferred) > 1:
             for item in arr:
                 item.status = "Ellenőrzést igényel"
-                item.note = "Több sima HU felirat ugyanahhoz a címhez"
+                item.note = f"Több sima {label} felirat ugyanahhoz a címhez"
 
 
 def apply_destination_conflicts(items, destination_for, source_path):

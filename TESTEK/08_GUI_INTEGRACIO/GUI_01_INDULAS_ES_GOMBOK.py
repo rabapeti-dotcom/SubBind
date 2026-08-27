@@ -76,8 +76,8 @@ class TestGuiStartup(GuiBase):
     def test_mainwindow_and_core_buttons_exist(self):
         self.assertEqual(self.win.windowTitle().startswith("Sorozat"), True)
         self.assertTrue(hasattr(self.win, "add_btn"))
-        self.assertTrue(hasattr(self.win, "test_lab_btn"))
-        self.assertTrue(hasattr(self.win, "patch_btn"))
+        self.assertFalse(hasattr(self.win, "test_lab_btn"))
+        self.assertFalse(hasattr(self.win, "patch_btn"))
         self.assertTrue(hasattr(self.win, "rename_btn"))
         self.assertEqual(len(self.win.items), 0)
 

@@ -73,6 +73,7 @@ class GuiBase(unittest.TestCase):
         QMessageBox.warning = staticmethod(
             lambda *args, **kwargs: QMessageBox.StandardButton.Ok
         )
+        self.win._confirm_rename = lambda *args, **kwargs: True
 
 
 class TestGuiNewOutput(GuiBase):

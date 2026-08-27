@@ -81,7 +81,7 @@ class TestM4GuiStabilizalas(GuiBase):
         hu = self.by_name("Show.S01E01.hu.srt")
         forced = self.by_name("forced")
         self.assertEqual(hu.new_name, "Show.S01E01.srt")
-        self.assertEqual(forced.new_name, "Show.S01E01.forced.srt")
+        self.assertEqual(forced.new_name, "Show.S01E01.hu.forced.srt")
         self.assertEqual(hu.status, "OK")
         self.assertEqual(forced.status, "OK")
 

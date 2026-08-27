@@ -1,5 +1,6 @@
 """
-F4.1: apply_pair_group_status — group kulcs nyelvfüggetlen; sima HU szabály változatlan.
+F4.1 / L2.1: apply_pair_group_status — group kulcs nyelvfüggetlen;
+default hu viselkedés változatlan, pref a sima-felirat szabályt vezérli.
 """
 from pathlib import Path
 import os
@@ -13,7 +14,7 @@ SRC = PROJECT_ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from renamer_engine import parse_item, apply_pair_group_status
+from renamer_engine import parse_item, apply_pair_group_status, is_preferred_plain_sub
 
 VIDEO = b"F41_TEST_VIDEO"
 SUB = b"F41_TEST_SUB"
@@ -166,6 +167,97 @@ class TestF41PairGroupStatus(unittest.TestCase):
         self.assertEqual(plain.status, "OK")
         self.assertEqual(forced.status, "OK")
         self.assertNotEqual(video.note, "Több sima HU felirat ugyanahhoz a címhez")
+
+    def test_l21_helper_plain_pref_only(self):
+        items = parsed(make_case(
+            self.tmp,
+            "Show.S01E01.mkv",
+            "Show.S01E01.de.srt",
+            "Show.S01E01.de.forced.srt",
+            "Show.S01E01.hu.srt",
+        ))
+        video = by_name(items, ".mkv")
+        de = by_name(items, "Show.S01E01.de.srt")
+        forced = by_name(items, "forced")
+        hu = by_name(items, ".hu.srt")
+        self.assertFalse(is_preferred_plain_sub(video, "de"))
+        self.assertTrue(is_preferred_plain_sub(de, "de"))
+        self.assertFalse(is_preferred_plain_sub(forced, "de"))
+        self.assertFalse(is_preferred_plain_sub(hu, "de"))
+        self.assertTrue(is_preferred_plain_sub(hu, "hu"))
+
+    def test_l21_pref_hu_video_en_missing_plain_hu(self):
+        items = parsed(make_case(
+            self.tmp,
+            "Show.S01E01.mkv",
+            "Show.S01E01.en.srt",
+        ))
+        apply_pair_group_status(items, pref="hu")
+        video = by_name(items, ".mkv")
+        self.assertEqual(video.status, "OK")
+        self.assertEqual(by_name(items, ".en.srt").status, "OK")
+        self.assertEqual(video.note, "Nincs sima HU felirat")
+
+    def test_l21_pref_de_video_de_no_missing_note(self):
+        items = parsed(make_case(
+            self.tmp,
+            "Show.S01E01.mkv",
+            "Show.S01E01.de.srt",
+        ))
+        apply_pair_group_status(items, pref="de")
+        video = by_name(items, ".mkv")
+        self.assertEqual(video.status, "OK")
+        self.assertEqual(by_name(items, ".de.srt").status, "OK")
+        self.assertNotEqual(video.status, "Ellenőrzést igényel")
+        self.assertNotEqual(video.note, "Nincs sima DE felirat")
+        self.assertNotIn("nincs sima DE", video.note.lower())
+
+    def test_l21_pref_de_video_only_hu_missing_plain_de(self):
+        items = parsed(make_case(
+            self.tmp,
+            "Show.S01E01.mkv",
+            "Show.S01E01.hu.srt",
+        ))
+        apply_pair_group_status(items, pref="de")
+        video = by_name(items, ".mkv")
+        sub = by_name(items, ".hu.srt")
+        self.assertEqual(video.status, "OK")
+        self.assertEqual(sub.status, "OK")
+        self.assertEqual(video.note, "Nincs sima DE felirat")
+        self.assertNotEqual(video.status, "Nem egyező pár")
+        self.assertNotEqual(video.status, "Ellenőrzést igényel")
+        self.assertNotEqual(sub.status, "Nem egyező pár")
+
+    def test_l21_pref_de_two_plain_de_review(self):
+        items = parsed(make_case(
+            self.tmp,
+            "Show.S01E01.mkv",
+            "Show.S01E01.de.srt",
+            "Show.S01E01.ger.srt",
+        ))
+        apply_pair_group_status(items, pref="de")
+        for item in items:
+            self.assertEqual(item.status, "Ellenőrzést igényel")
+            self.assertEqual(item.note, "Több sima DE felirat ugyanahhoz a címhez")
+
+    def test_l21_pref_de_forced_not_second_plain(self):
+        items = parsed(make_case(
+            self.tmp,
+            "Show.S01E01.mkv",
+            "Show.S01E01.de.srt",
+            "Show.S01E01.de.forced.srt",
+        ))
+        apply_pair_group_status(items, pref="de")
+        video = by_name(items, ".mkv")
+        plain = by_name(items, "Show.S01E01.de.srt")
+        forced = by_name(items, "forced")
+        self.assertEqual(forced.variant, "forced")
+        self.assertEqual(video.status, "OK")
+        self.assertEqual(plain.status, "OK")
+        self.assertEqual(forced.status, "OK")
+        self.assertNotEqual(video.status, "Ellenőrzést igényel")
+        self.assertNotEqual(video.note, "Több sima DE felirat ugyanahhoz a címhez")
+        self.assertNotEqual(video.note, "Nincs sima DE felirat")
 
 
 if __name__ == "__main__":

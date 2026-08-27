@@ -81,6 +81,8 @@ class TestM14OperationalPrefs(unittest.TestCase):
             self.assertFalse(win.title_manual)
             self.assertEqual(win.title_value, "")
             self.assertTrue(win.preserve_cb.isChecked())
+            self.assertEqual(win.subtitle_pref, "hu")
+            self.assertEqual(win.subtitle_pref_combo.currentData(), "hu")
         finally:
             win.close()
             win.deleteLater()
@@ -96,10 +98,28 @@ class TestM14OperationalPrefs(unittest.TestCase):
             self.assertTrue(win.conflicts_cb.isChecked())
             self.assertEqual(win.sort_combo.currentText(), "Évad → epizód")
             self.assertEqual(win.title_edit.text(), "")
+            self.assertEqual(win.subtitle_pref, "hu")
+            self.assertEqual(win.subtitle_pref_combo.currentData(), "hu")
         finally:
             win.close()
             win.deleteLater()
             APP.processEvents()
+
+
+class TestNormalizeSubtitlePref(unittest.TestCase):
+    def test_whitelist_and_invalid_fallback(self):
+        from renamer_engine import normalize_subtitle_pref, DEFAULT_SUBTITLE_PREF
+
+        self.assertEqual(DEFAULT_SUBTITLE_PREF, "hu")
+        self.assertEqual(normalize_subtitle_pref("hu"), "hu")
+        self.assertEqual(normalize_subtitle_pref("de"), "de")
+        self.assertEqual(normalize_subtitle_pref("EN"), "en")
+        self.assertEqual(normalize_subtitle_pref(" es "), "es")
+        self.assertEqual(normalize_subtitle_pref(None), "hu")
+        self.assertEqual(normalize_subtitle_pref(""), "hu")
+        self.assertEqual(normalize_subtitle_pref("ru"), "hu")
+        self.assertEqual(normalize_subtitle_pref("xx"), "hu")
+        self.assertEqual(normalize_subtitle_pref("hun"), "hu")
 
 
 if __name__ == "__main__":

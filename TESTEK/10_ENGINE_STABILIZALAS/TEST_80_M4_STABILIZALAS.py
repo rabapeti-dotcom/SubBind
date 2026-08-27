@@ -61,22 +61,23 @@ class TestM4Engine(unittest.TestCase):
         self.assertEqual(out, "Show.S01E01.srt")
 
     def test_isolated_hu_forced_keeps_compat_name(self):
-        """Egyedüli HU forced: a meglévő konvenció szerint nincs .forced a névben."""
+        """L2.4 B stratégia: HU forced nem preferred plain, kap .hu.forced."""
         item = self.parse_name("Show.S01E01.hu.forced.srt", SUB)
         self.assertEqual(item.variant, "forced")
         out = render_template(SERIES, item, item.title)
-        self.assertEqual(out, "Show.S01E01.srt")
+        self.assertEqual(out, "Show.S01E01.hu.forced.srt")
 
     def test_hu_and_hu_forced_get_distinct_names(self):
         hu = self.parse_name("Show.S01E01.hu.srt", SUB)
         forced = self.parse_name("Show.S01E01.hu.forced.srt", SUB)
         hu.new_name = render_template(SERIES, hu, hu.title)
         forced.new_name = render_template(SERIES, forced, forced.title)
-        self.assertEqual(hu.new_name, forced.new_name)
+        self.assertEqual(hu.new_name, "Show.S01E01.srt")
+        self.assertEqual(forced.new_name, "Show.S01E01.hu.forced.srt")
+        self.assertNotEqual(hu.new_name, forced.new_name)
         disambiguate_subtitle_target_names([hu, forced])
         self.assertEqual(hu.new_name, "Show.S01E01.srt")
-        self.assertEqual(forced.new_name, "Show.S01E01.forced.srt")
-        self.assertNotEqual(hu.new_name, forced.new_name)
+        self.assertEqual(forced.new_name, "Show.S01E01.hu.forced.srt")
 
     def test_ext_placeholder_does_not_double_extension(self):
         item = self.parse_name("Show.S01E01.mkv")
@@ -143,7 +144,7 @@ class TestM4Analyze(unittest.TestCase):
         forced = self.by_name("forced")
         self.assertEqual(video.new_name, "Show.S01E01.mkv")
         self.assertEqual(hu.new_name, "Show.S01E01.srt")
-        self.assertEqual(forced.new_name, "Show.S01E01.forced.srt")
+        self.assertEqual(forced.new_name, "Show.S01E01.hu.forced.srt")
         self.assertNotEqual(hu.new_name, forced.new_name)
         self.assertEqual(video.status, "OK")
         self.assertEqual(hu.status, "OK")

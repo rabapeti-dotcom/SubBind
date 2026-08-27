@@ -10,6 +10,7 @@ if not exist ".venv\Scripts\python.exe" (
     exit /b 1
 )
 
+set "SERIESRENAMER_DEV=1"
 ".venv\Scripts\python.exe" "src\main.py"
 set "ERR=%ERRORLEVEL%"
 

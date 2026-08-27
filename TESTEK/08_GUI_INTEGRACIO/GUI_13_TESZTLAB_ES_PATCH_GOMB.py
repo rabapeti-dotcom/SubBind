@@ -17,7 +17,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 try:
-    from main import MainWindow
+    from main import MainWindow, DEV_ENV
 except Exception as exc:
     raise RuntimeError(f"MainWindow nem tölthető be: {SRC / 'main.py'}") from exc
 
@@ -40,6 +40,8 @@ def make_case(root, *files):
 class GuiBase(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="sr_gui_"))
+        self.original_dev = os.environ.get(DEV_ENV)
+        os.environ[DEV_ENV] = "1"
         self.win = MainWindow()
         self.win.show()
         APP.processEvents()
@@ -48,6 +50,10 @@ class GuiBase(unittest.TestCase):
         self.win.close()
         self.win.deleteLater()
         APP.processEvents()
+        if self.original_dev is None:
+            os.environ.pop(DEV_ENV, None)
+        else:
+            os.environ[DEV_ENV] = self.original_dev
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def add(self, *paths):

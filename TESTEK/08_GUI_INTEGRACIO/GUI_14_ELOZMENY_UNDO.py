@@ -109,6 +109,7 @@ class GuiBase(unittest.TestCase):
         QMessageBox.critical = staticmethod(
             lambda *args, **kwargs: QMessageBox.StandardButton.Ok
         )
+        self.win._confirm_rename = lambda *args, **kwargs: True
 
 
 class TestGuiHistoryUndo(GuiBase):

@@ -95,6 +95,7 @@ class TestM5GuiAllapot(unittest.TestCase):
         QMessageBox.critical = staticmethod(
             lambda *args, **kwargs: QMessageBox.StandardButton.Ok
         )
+        self.win._confirm_rename = lambda *args, **kwargs: True
 
     def test_checkbox_and_selection_commands(self):
         src = make_case(

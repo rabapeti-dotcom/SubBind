@@ -37,6 +37,10 @@ def make_case(root, *files):
 
 class TestM8RefreshAnalyze(unittest.TestCase):
     def setUp(self):
+        self.original_data = os.environ.get("SERIESRENAMER_DATA")
+        self.data_dir = Path(tempfile.mkdtemp(prefix="sr_m8_data_"))
+        self.out_dir = Path(tempfile.mkdtemp(prefix="sr_m8_out_"))
+        os.environ["SERIESRENAMER_DATA"] = str(self.data_dir)
         self.tmp = Path(tempfile.mkdtemp(prefix="sr_m8_"))
         self.message_box_methods = {
             "question": QMessageBox.question,
@@ -49,6 +53,7 @@ class TestM8RefreshAnalyze(unittest.TestCase):
         )
         self.win = MainWindow()
         self.win.show_welcome = False
+        self.win.output_dir = str(self.out_dir)
         self.win.show()
         APP.processEvents()
         self.analyze_calls = 0
@@ -66,7 +71,13 @@ class TestM8RefreshAnalyze(unittest.TestCase):
         self.win.close()
         self.win.deleteLater()
         APP.processEvents()
+        if self.original_data is None:
+            os.environ.pop("SERIESRENAMER_DATA", None)
+        else:
+            os.environ["SERIESRENAMER_DATA"] = self.original_data
         shutil.rmtree(self.tmp, ignore_errors=True)
+        shutil.rmtree(self.data_dir, ignore_errors=True)
+        shutil.rmtree(self.out_dir, ignore_errors=True)
 
     def add(self, *paths):
         self.win.add_paths([Path(p) for p in paths])

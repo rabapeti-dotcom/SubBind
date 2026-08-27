@@ -13,10 +13,10 @@ if str(SRC) not in sys.path:
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QMessageBox, QProgressBar
 
 try:
-    from main import MainWindow
+    from main import COL_PROGRESS, MainWindow
 except Exception as exc:
     raise RuntimeError(f"MainWindow nem tölthető be: {SRC / 'main.py'}") from exc
 
@@ -78,6 +78,7 @@ class GuiBase(unittest.TestCase):
         QMessageBox.warning = staticmethod(
             lambda *args, **kwargs: QMessageBox.StandardButton.Ok
         )
+        self.win._confirm_rename = lambda *args, **kwargs: True
 
 
 class TestGuiCopy(GuiBase):
@@ -139,6 +140,17 @@ class TestGuiCopy(GuiBase):
             before_sub,
             "A forrásfelirat megváltozott."
         )
+
+        for item in self.win.items:
+            self.assertEqual(item.copy_status, "Átmásolva")
+            self.assertEqual(item.copy_percent, 100)
+            self.assertEqual(item.status, "Kész")
+        for row in range(self.win.table.rowCount()):
+            widget = self.win.table.cellWidget(row, COL_PROGRESS)
+            cell = self.win.table.item(row, COL_PROGRESS)
+            self.assertFalse(isinstance(widget, QProgressBar))
+            self.assertIsNotNone(cell)
+            self.assertEqual(cell.text(), "100%")
 
 
 if __name__ == "__main__":

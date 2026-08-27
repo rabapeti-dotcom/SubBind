@@ -34,12 +34,12 @@ class TestValosFeliratnevek(BaseTest):
         self.assertEqual(item.lang, "de")
 
     def test_forced_variant_hu(self):
-        """A forced variáns felismerhető, de magyar feliratnál nem kerül az outputba."""
+        """L2.4 B stratégia: HU forced felismerhető, és .hu.forced utótagot kap."""
         name = "Show.Name.S02E04.1080p.WEB-DL.hu.forced.srt"
         item = parse(self.path_for(name, SUB))
         self.assertEqual(item.lang, "hu")
         self.assertEqual(item.variant, "forced")
-        self.assertEqual(render_series(item), "Show.Name.S02E04.srt")
+        self.assertEqual(render_series(item), "Show.Name.S02E04.hu.forced.srt")
 
     def test_readme_style_mismatched_subtitle_name(self):
         """README példa: hosszú release-feliratnév – a párosításhoz SxxExx kell."""

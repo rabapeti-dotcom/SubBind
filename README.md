@@ -20,7 +20,7 @@ Kimeneti exe build: `build_exe.bat` → `dist\SorozatEsFilmAtnevezo\`.
 2. Futtasd a `setup.bat` fájlt.
 3. Indítsd a `run_dev.bat` fájlt.
 
-Fejlesztői módban a főablakban megjelenik a Tesztlabor és a Patch Center. Frozen / release buildben ezek nincsenek a felhasználói felületen.
+A Tesztlabor és a Patch Center csak fejlesztői módban jelenik meg (`run_dev.bat`, vagy `SERIESRENAMER_DEV=1`). Normál `python src/main.py` indításnál, valamint frozen / release buildben nincsenek a felhasználói felületen.
 
 ### Mappák
 
