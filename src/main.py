@@ -1189,6 +1189,9 @@ class MainWindow(QMainWindow):
         self.guide_banner = QLabel()
         self.guide_banner.setWordWrap(True)
         self.guide_banner.setTextFormat(Qt.TextFormat.RichText)
+        self.guide_banner.setAlignment(
+            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter
+        )
         layout.addWidget(self.guide_banner)
 
         tools = QHBoxLayout()

@@ -37,8 +37,16 @@ def make_case(root, *files):
 
 class GuiBase(unittest.TestCase):
     def setUp(self):
+        self.original_data = os.environ.get("SERIESRENAMER_DATA")
+        self.data_dir = Path(tempfile.mkdtemp(prefix="sr_gui_m2_data_"))
+        self.out = Path(tempfile.mkdtemp(prefix="sr_gui_m2_out_"))
+        os.environ["SERIESRENAMER_DATA"] = str(self.data_dir)
         self.tmp = Path(tempfile.mkdtemp(prefix="sr_gui_m2_"))
         self.win = MainWindow()
+        self.win.show_welcome = False
+        self.win.output_dir = str(self.out)
+        if hasattr(self.win, "output_edit"):
+            self.win.output_edit.setText(str(self.out))
         self.win.show()
         APP.processEvents()
 
@@ -46,7 +54,13 @@ class GuiBase(unittest.TestCase):
         self.win.close()
         self.win.deleteLater()
         APP.processEvents()
+        if self.original_data is None:
+            os.environ.pop("SERIESRENAMER_DATA", None)
+        else:
+            os.environ["SERIESRENAMER_DATA"] = self.original_data
         shutil.rmtree(self.tmp, ignore_errors=True)
+        shutil.rmtree(self.data_dir, ignore_errors=True)
+        shutil.rmtree(self.out, ignore_errors=True)
 
     def add(self, *paths):
         self.win.add_paths([Path(p) for p in paths])
