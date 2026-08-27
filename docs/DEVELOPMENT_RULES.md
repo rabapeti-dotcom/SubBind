@@ -10,13 +10,29 @@ Ezek a szabályok a tartós állapot kanonikus forrásai a roadmapdel és a dön
 | Fájl | Szerep |
 |---|---|
 | `docs/ROADMAP.md` | fázisok, történeti vs. tényleges bontás, következő lépés |
-| `docs/PROJECT_STATE.md` | aktuális verzió, PASS/FAIL, ismert hibák, release cél |
+| `docs/PROJECT_STATE.md` | **élő checkpoint** — aktuális verzió, PASS/FAIL, ismert hibák, release cél |
 | `docs/DECISIONS.md` | elfogadott döntések vs. implementációs következtetések |
 | `docs/DEVELOPMENT_RULES.md` | ez a fájl — munkamódszer |
+| `docs/PROJECT_HANDOFF.md` | új session indítása |
 | `docs/PROJEKT_STRUKTURA.txt` | mappastruktúra (korábbi, nem felülírt) |
 
 A roadmap és a döntési dokumentumok a projekt tartós állapotának kanonikus forrásai.
 Hiányzó szabályt ne találjunk ki. Bizonytalanság esetén a `DECISIONS.md` „Projekt-döntések” szakasza a mérvadó, nem az implementációs következtetések.
+
+## Élő checkpoint (`PROJECT_STATE.md`)
+
+`docs/PROJECT_STATE.md` **élő checkpoint**, nem egyszeri snapshot.
+
+Frissíteni kell a többi érintett kanonikus dokumentummal együtt, ha:
+
+- jelentős fázis lezárul;
+- jelentős döntés születik;
+- a roadmap változik;
+- fontos regresszió lezárul;
+- release checkpoint van.
+
+A frissített dokumentációt **külön checkpoint commitban** kell rögzíteni.
+Automatikus commit / push továbbra sincs: commit és push csak kérésre.
 
 ## Egy fázis egyszerre
 
@@ -55,7 +71,8 @@ Ne találjunk ki hiányzó viselkedést. Kérdezz, vagy zárd a fázist auditál
 
 - Commit csak kérésre.
 - Push csak kérésre.
-- Ne keverjük dokumentáció-mentést, fázis-implementációt és FAIL-javítást egy automatikus commitba.
+- Ne keverjük dokumentáció-mentést, fázis-implementációt és FAIL-javítást egy commitba.
+- Docs-frissítés (élő checkpoint) külön checkpoint commit; automatikus commit/push nincs.
 
 ## Checkpoint
 
