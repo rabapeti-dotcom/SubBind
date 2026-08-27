@@ -53,6 +53,19 @@ Az implementációs következtetések külön szakaszban vannak; azok nem dönt�
 - Ritka `.sup` / `.idx` formátumok nem prioritások.
 - LANGS-bővítés (L7) külön, explicit döntés. Most nincs indítva.
 
+### L7 — LANGS expansion halasztva (2026-08-27)
+
+Explicit projekt-döntés az L7 előkészítő audit után. A korábbi L1–L2.4 döntések változatlanok.
+
+- Az L7 audit **megtörtént**. L7 **jelenleg nem indokolt** a 2026-09-20 release céljához; állapot: **deferred**.
+- L7 **nem implementálható** új, explicit követelmény nélkül.
+- LANGS jelenleg: `hu`, `en`, `de`, `fr`, `es`, `it`, `pl`, `cs`, `sk`, `ro`.
+- `subtitle_pref` whitelist változatlan: `hu` / `de` / `en` / `es`.
+- RU továbbra sem támogatott.
+- Nincs dokumentált release-blokkoló hiány, amely LANGS-bővítést igényelne.
+- A parser által már ismert, de preference-ként nem választható nyelvek (`fr`, `it`, `pl`, `cs`, `sk`, `ro`) **külön kérdés**, nem L7-feladat most.
+- TEST_77 / GUI_16 továbbra is ismert, független destination/test-isolation FAIL.
+
 ### Fázis-határok (elfogadott munkarend)
 
 - Egy fázis egyszerre.
@@ -79,6 +92,6 @@ Ezek Cursor/audit megfigyelések a kódból. Új szabályt **ne** vezessünk le 
 ## Checkpoint
 
 - Version: 0.6.1
-- Completed: L1, L2.1, L2.2, L2.3, L2.4
-- Next decision: L7
+- Completed: C.1, L1, L2.1, L2.2, L2.3, L2.4
+- L7 deferred; next step: L8 release stabilization planning
 - Release target: 2026-09-20

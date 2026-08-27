@@ -16,11 +16,12 @@ Ezek a fázisnevek maradnak a történeti hivatkozás.
 | L4 | rename kapu | lásd tényleges bontás: L2.3 |
 | L5 | motor státusz/note | lásd tényleges bontás: L2.1 |
 | L6 | `render_template` + B filename strategy | lásd tényleges bontás: L2.4 |
-| L7 | LANGS expansion, külön döntés alapján | **nincs indítva** — előtte explicit döntés kell |
+| L7 | LANGS expansion, külön döntés alapján | **deferred** (2026-08-27) — audit megtörtént; jelenleg nem indokolt; új követelmény nélkül nem implementálható |
 | L8 | teljes regresszió + fizikai GUI | **nincs indítva** — csak megfelelő funkcionális állapot után |
 
-L7 előtt explicit döntés szükséges arról, hogy valóban kell-e LANGS-bővítés.
-L8 csak a megfelelő funkcionális állapot után indul.
+L7 történeti/halasztott fázis marad; a fázis **nincs törölve**.
+L7 csak új, explicit követelmény esetén indulhat.
+L8 csak a megfelelő funkcionális állapot után indul; nincs started és nincs completed.
 
 ## Tényleges implementációs bontás (L2–L6)
 
@@ -50,16 +51,25 @@ subtitle_pref
 Közös feltétel: `is_preferred_plain_sub(item, pref)` —
 `kind == "sub"` AND `lang == pref` AND nincs variant.
 
+## L7 audit (2026-08-27)
+
+Explicit döntés: L7 a 2026-09-20 release céljához **jelenleg nem indokolt** (`docs/DECISIONS.md`).
+
+- LANGS: `hu`, `en`, `de`, `fr`, `es`, `it`, `pl`, `cs`, `sk`, `ro`
+- `subtitle_pref`: `hu`, `de`, `en`, `es`
+- RU továbbra sem támogatott
+- Nincs dokumentált release-blokkoló hiány LANGS-bővítésre
+- Parserben ismert, pref-ként nem választható nyelvek: külön kérdés
+
 ## Következő lépés
 
-1. **L7 döntés** — kell-e LANGS-bővítés (RU vagy más nyelv). Most ne implementálni.
-2. **L8** — teljes regresszió + fizikai GUI, csak a funkcionális állapot után.
+L7 deferred; next step: L8 release stabilization planning.
 
-Release cél: **2026-09-20**.
+Release cél: **2026-09-20** (változatlan).
 
 ## Checkpoint
 
 - Version: 0.6.1
-- Completed: L1, L2.1, L2.2, L2.3, L2.4
-- Next decision: L7
+- Completed: C.1, L1, L2.1, L2.2, L2.3, L2.4
+- L7 deferred; next step: L8 release stabilization planning
 - Release target: 2026-09-20

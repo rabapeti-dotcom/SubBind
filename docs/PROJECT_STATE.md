@@ -1,7 +1,7 @@
 # Project state — SorozatRenamero 0.6.1
 
-Mentés dátuma: 2026-08-26.
-Forrás: L1–L2.4 munkamenet + L2 integrációs audit.
+Mentés dátuma: 2026-08-27.
+Forrás: L1–L2.4 munkamenet + L2 integrációs audit + L7 előkészítő audit.
 A kanonikus döntések: `docs/DECISIONS.md`. A munkamódszer: `docs/DEVELOPMENT_RULES.md`.
 
 ## Repository
@@ -20,18 +20,23 @@ A mappastruktúra részletei: `docs/PROJEKT_STRUKTURA.txt` (ez a fájl nem lett 
 
 ## Funkcionális állapot
 
+Checkpoint: **C.1 + L1 + L2.1 + L2.2 + L2.3 + L2.4 PASS.**
+
 | Fázis | Állapot |
 |---|---|
+| C.1 — többfeliratos GUI | PASS (L1 előtt lezárva) |
 | L1 — subtitle_pref infrastructure | PASS |
 | L2.1 — pair-status | PASS |
 | L2.2 — C.1 primary | PASS |
 | L2.3 — checkbox + rename | PASS |
 | L2.4 — filename strategy B | PASS |
 | Új L2 regresszió | nincs |
-| L7 — LANGS expansion | nincs indítva |
+| L7 — LANGS expansion | **deferred** (audit 2026-08-27; jelenleg nem indokolt) |
 | L8 — teljes regresszió + fizikai GUI | nincs indítva |
 
 Lánc: `subtitle_pref` → pair-status → C.1 primary → checkbox/rename kapu → B filename strategy.
+
+L7 audit: LANGS = `hu, en, de, fr, es, it, pl, cs, sk, ro`; `subtitle_pref` = `hu, de, en, es`; RU nem támogatott. Nincs dokumentált release-blokkoló hiány LANGS-bővítésre. L7 csak új, explicit követelmény esetén indulhat.
 
 ## Tesztállapot (L2 integrációs audit, 2026-08-26)
 
@@ -55,14 +60,15 @@ Célzott L2 tesztek (audit): `TEST_87`, `TEST_97`, `TEST_86`, `GUI_22`, `GUI_23`
 - Dátum: **2026-09-20**
 - Cél: működőképes, stabil, kiadható SorozatRenamero release
 
-## Következő döntés
+## Következő lépés
 
-L7 előtt explicit döntés kell: szükséges-e LANGS-bővítés.
-L8 csak a megfelelő funkcionális állapot után indul.
+L7 deferred; next step: L8 release stabilization planning.
+
+L8 nincs started és nincs completed.
 
 ## Checkpoint
 
 - Version: 0.6.1
-- Completed: L1, L2.1, L2.2, L2.3, L2.4
-- Next decision: L7
+- Completed: C.1, L1, L2.1, L2.2, L2.3, L2.4
+- L7 deferred; next step: L8 release stabilization planning
 - Release target: 2026-09-20
