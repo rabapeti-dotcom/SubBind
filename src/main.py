@@ -3551,6 +3551,18 @@ class MainWindow(QMainWindow):
             self.cancel_requested = False
             if hasattr(self, "progress_bar"):
                 self.progress_bar.hide()
+            if record["changes"] or failed:
+                record["failed"] = [
+                    {"file": str(self._source_path(item)), "reason": reason}
+                    for item, reason in failed
+                ]
+                if failed or current < total_changes:
+                    record["status"] = "Részben elkészült"
+                else:
+                    record["status"] = "Sikeres"
+                self.history.append(record)
+                self.save_history()
+                self.update_history_view()
             QMessageBox.critical(
                 self, "Műveleti hiba",
                 f"A művelet nem fejeződött be.\n\n{exc}"
@@ -3771,12 +3783,18 @@ class MainWindow(QMainWindow):
                 return
             if QMessageBox.question(self, "Kimenet visszaállítása", f"{len(changes)} létrehozott fájl törlésére készülsz.\n\nAz eredeti fájlokat ez nem érinti.\n\nFolytatod?") != QMessageBox.StandardButton.Yes:
                 return
-            apply_copy_undo(changes)
+            undo_failures = apply_copy_undo(changes)
+            failed_keys = {
+                file_identity_key(entry["path"]) for entry in undo_failures
+            }
         else:
             if not verify_inplace_undo(changes):
                 QMessageBox.critical(self, "Visszaállítás nem biztonságos", "A fájlállapot megváltozott, ezért a műveletet nem hajtottam végre.")
                 return
-            apply_inplace_undo(changes)
+            undo_failures = apply_inplace_undo(changes)
+            failed_keys = {
+                file_identity_key(entry["new"]) for entry in undo_failures
+            }
 
         def path_key(value):
             try:
@@ -3791,6 +3809,8 @@ class MainWindow(QMainWindow):
             }
             restored = None
             for change in changes:
+                if file_identity_key(change["new"]) in failed_keys:
+                    continue
                 if (
                     path_key(change["new"]) in item_keys
                     or path_key(change["old"]) in item_keys
@@ -3807,6 +3827,31 @@ class MainWindow(QMainWindow):
             item.copy_status = "Várakozik"
             item.copy_percent = 0
             item.note = ""
+
+        if undo_failures:
+            remaining = [
+                change for change in changes
+                if file_identity_key(change["new"]) in failed_keys
+            ]
+            record["changes"] = remaining
+            extra_failed = []
+            for entry in undo_failures:
+                path = entry.get("path") or entry.get("new")
+                extra_failed.append({
+                    "file": str(path),
+                    "reason": f"Visszaállítás sikertelen: {entry['error']}",
+                })
+            record["failed"] = list(record.get("failed") or []) + extra_failed
+            record["status"] = "Részben elkészült"
+            self.save_history()
+            self.update_history_view()
+            self.refresh()
+            QMessageBox.critical(
+                self,
+                "Visszaállítás nem biztonságos",
+                "A visszaállítás részben sikerült, a megmaradt fájlok az előzményben maradtak.",
+            )
+            return
 
         record["status"] = "Visszavonva"
         self.save_history()

@@ -83,6 +83,29 @@ class TestF51CopyToDestination(unittest.TestCase):
         self.assertFalse(self.dest.exists())
         self.assertFalse(Path(str(self.dest) + ".part").exists())
 
+    def test_write_oserror_cleans_part_and_does_not_write_dest(self):
+        original_open = Path.open
+
+        def exploding_open(path, mode="r", *args, **kwargs):
+            handle = original_open(path, mode, *args, **kwargs)
+            if "w" in str(mode) and str(path).endswith(".part"):
+                def boom(_data):
+                    raise OSError("Simulated copy write error")
+                handle.write = boom
+            return handle
+
+        Path.open = exploding_open
+        try:
+            with self.assertRaises(OSError):
+                copy_to_destination(self.src, self.dest)
+        finally:
+            Path.open = original_open
+
+        self.assertTrue(self.src.is_file())
+        self.assertEqual(self.src.read_bytes(), PAYLOAD)
+        self.assertFalse(self.dest.exists())
+        self.assertFalse(Path(str(self.dest) + ".part").exists())
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -586,11 +586,20 @@ def verify_copy_undo(changes):
 
 
 def apply_copy_undo(changes):
-    """Létrehozott kimenetek törlése fordított sorrendben. A forrást nem bántja."""
+    """Létrehozott kimenetek törlése fordított sorrendben. A forrást nem bántja.
+
+    Unlink-hiba után a többi fájlt is megkísérli. Visszatérés: a megmaradt
+    célfájlok és a hozzájuk tartozó hibák listája.
+    """
+    failures = []
     for change in reversed(list(changes or ())):
-        new = Path(change["new"])
-        if new.exists():
-            new.unlink()
+        try:
+            new = Path(change["new"])
+            if new.exists():
+                new.unlink()
+        except OSError as exc:
+            failures.append({"path": str(new), "error": str(exc)})
+    return failures
 
 
 def verify_inplace_undo(changes):
@@ -604,6 +613,19 @@ def verify_inplace_undo(changes):
 
 
 def apply_inplace_undo(changes):
-    """new → old visszanevezés fordított sorrendben. OSError nem nyelődik."""
+    """new → old visszanevezés fordított sorrendben.
+
+    Rename-hiba után a többi fájlt is megkísérli. Visszatérés: a megmaradt
+    új nevek és a hozzájuk tartozó hibák listája.
+    """
+    failures = []
     for change in reversed(list(changes or ())):
-        Path(change["new"]).rename(change["old"])
+        try:
+            Path(change["new"]).rename(change["old"])
+        except OSError as exc:
+            failures.append({
+                "old": str(change["old"]),
+                "new": str(change["new"]),
+                "error": str(exc),
+            })
+    return failures

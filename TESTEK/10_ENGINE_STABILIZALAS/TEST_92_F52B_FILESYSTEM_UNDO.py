@@ -116,6 +116,69 @@ class TestF52BFilesystemUndo(unittest.TestCase):
         new.unlink()
         self.assertFalse(verify_inplace_undo(changes))
 
+    def test_copy_undo_reports_unlink_error_and_continues(self):
+        src_a = self.tmp / "a.bin"
+        src_b = self.tmp / "b.bin"
+        dest_a = self.tmp / "out_a.bin"
+        dest_b = self.tmp / "out_b.bin"
+        src_a.write_bytes(b"A")
+        src_b.write_bytes(b"B")
+        ch_a = copy_change(src_a, dest_a)
+        ch_b = copy_change(src_b, dest_b)
+        original_unlink = Path.unlink
+
+        def failing_unlink(path, *args, **kwargs):
+            if path == dest_a:
+                raise OSError("Simulated copy undo unlink error")
+            return original_unlink(path, *args, **kwargs)
+
+        Path.unlink = failing_unlink
+        try:
+            failures = apply_copy_undo([ch_a, ch_b])
+        finally:
+            Path.unlink = original_unlink
+
+        self.assertTrue(dest_a.exists())
+        self.assertFalse(dest_b.exists())
+        self.assertEqual(src_a.read_bytes(), b"A")
+        self.assertEqual(src_b.read_bytes(), b"B")
+        self.assertEqual(len(failures), 1)
+        self.assertEqual(failures[0]["path"], str(dest_a))
+        self.assertIn("Simulated copy undo unlink error", failures[0]["error"])
+
+    def test_inplace_undo_reports_rename_error_and_continues(self):
+        old_a = self.tmp / "old_a.bin"
+        old_b = self.tmp / "old_b.bin"
+        new_a = self.tmp / "new_a.bin"
+        new_b = self.tmp / "new_b.bin"
+        new_a.write_bytes(b"A")
+        new_b.write_bytes(b"B")
+        changes = [
+            {"old": str(old_a), "new": str(new_a), "action": "rename"},
+            {"old": str(old_b), "new": str(new_b), "action": "rename"},
+        ]
+        original_rename = Path.rename
+
+        def failing_rename(path, target):
+            if path == new_a:
+                raise OSError("Simulated inplace undo rename error")
+            return original_rename(path, target)
+
+        Path.rename = failing_rename
+        try:
+            failures = apply_inplace_undo(changes)
+        finally:
+            Path.rename = original_rename
+
+        self.assertTrue(new_a.exists())
+        self.assertFalse(new_b.exists())
+        self.assertTrue(old_b.exists())
+        self.assertEqual(old_b.read_bytes(), b"B")
+        self.assertEqual(len(failures), 1)
+        self.assertEqual(failures[0]["old"], str(old_a))
+        self.assertEqual(failures[0]["new"], str(new_a))
+        self.assertIn("Simulated inplace undo rename error", failures[0]["error"])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
