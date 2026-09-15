@@ -258,7 +258,8 @@ _HU = {
     "preview.select_missing": "Csak a hiányzókat",
     "history.info": (
         "Itt láthatod a korábbi műveleteket. "
-        "A jelölőnégyzetekkel több előzményt is kiválaszthatsz."
+        "A jelölőnégyzetekkel több előzményt is kiválaszthatsz. "
+        "Részlegesen sikeres műveletnél a Kimaradt fájlok gomb megmutatja a konkrét problémákat."
     ),
     "hist.check": "✓",
     "hist.num": "#",
@@ -271,6 +272,13 @@ _HU = {
     "hist.deselect": "Kijelölés törlése",
     "hist.delete": "Kijelöltek törlése",
     "hist.undo": "Kiválasztott művelet visszaállítása",
+    "hist.failed": "Kimaradt fájlok",
+    "hist.failed_title": "Kimaradt fájlok",
+    "hist.failed_need_one": "A kimaradt fájlok megtekintéséhez pontosan egy előzményt jelölj ki.",
+    "hist.failed_none": "Ehhez a művelethez nincs kimaradt fájl.",
+    "hist.failed_body": "{n} fájl kimaradt.\n\n{list}",
+    "hist.failed_item": "{file}\n  {reason}",
+    "hist.failed_tip": "A kimaradt fájlok okai a Kimaradt fájlok gombbal nézhetők meg.",
     "hist.export": "Előzmények exportálása",
     "hist.clear": "Összes előzmény törlése",
     "status.zero": "0 fájl",
@@ -615,7 +623,8 @@ _EN = {
     "preview.select_missing": "Missing only",
     "history.info": (
         "Previous operations are listed here. "
-        "Use the checkboxes to select several history entries."
+        "Use the checkboxes to select several history entries. "
+        "For a partial result, Skipped files shows the concrete problems."
     ),
     "hist.check": "✓",
     "hist.num": "#",
@@ -628,6 +637,13 @@ _EN = {
     "hist.deselect": "Clear selection",
     "hist.delete": "Delete selected",
     "hist.undo": "Restore selected operation",
+    "hist.failed": "Skipped files",
+    "hist.failed_title": "Skipped files",
+    "hist.failed_need_one": "Select exactly one history entry to view skipped files.",
+    "hist.failed_none": "This operation has no skipped files.",
+    "hist.failed_body": "{n} files skipped.\n\n{list}",
+    "hist.failed_item": "{file}\n  {reason}",
+    "hist.failed_tip": "Open Skipped files to see why files were left out.",
     "hist.export": "Export history",
     "hist.clear": "Clear all history",
     "status.zero": "0 files",

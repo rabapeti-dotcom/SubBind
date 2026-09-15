@@ -1549,6 +1549,9 @@ class MainWindow(QMainWindow):
         )
         self.hist_undo_btn.clicked.connect(self.undo_selected)
         buttons.addWidget(self.hist_undo_btn)
+        self.hist_failed_btn = QPushButton("Kimaradt fájlok")
+        self.hist_failed_btn.clicked.connect(self.show_selected_history_failures)
+        buttons.addWidget(self.hist_failed_btn)
         self.hist_export_btn = QPushButton("Előzmények exportálása")
         self.hist_export_btn.clicked.connect(self.export_history)
         buttons.addWidget(self.hist_export_btn)
@@ -3668,8 +3671,41 @@ class MainWindow(QMainWindow):
                 if status in {"Visszavonva", "Megszakítva", "Hiba"} and column == 3:
                     cell.setForeground(QColor("#b71c1c"))
                     cell.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+                if column == 5 and failed_count:
+                    cell.setToolTip(t("hist.failed_tip"))
                 self.hist.setItem(row, column, cell)
         self.hist.resizeRowsToContents()
+
+    def _format_history_failed_text(self, record):
+        """failed lista olvasható szövege; a rekordot nem módosítja."""
+        items = []
+        for entry in record.get("failed") or []:
+            if not isinstance(entry, dict):
+                continue
+            file_text = str(entry.get("file") or "")
+            reason_text = str(entry.get("reason") or "")
+            items.append(t("hist.failed_item", file=file_text, reason=reason_text))
+        return t("hist.failed_body", n=len(items), list="\n\n".join(items))
+
+    def show_selected_history_failures(self):
+        """A kijelölt előzmény failed elemeinek file/reason listája. Undo-t nem érinti."""
+        indices = self._selected_history_indices()
+        if len(indices) != 1:
+            QMessageBox.information(
+                self, t("hist.failed_title"), t("hist.failed_need_one")
+            )
+            return
+        record = self.history[indices[0]]
+        failed = record.get("failed") or []
+        if not failed:
+            QMessageBox.information(
+                self, t("hist.failed_title"), t("hist.failed_none")
+            )
+            return
+        QMessageBox.information(
+            self, t("hist.failed_title"), self._format_history_failed_text(record)
+        )
+
 
     def _history_checkbox_changed(self, key, state):
         if state == Qt.CheckState.Checked.value:
@@ -4136,6 +4172,7 @@ class MainWindow(QMainWindow):
             self.hist_deselect_btn.setText(t("hist.deselect"))
             self.hist_delete_btn.setText(t("hist.delete"))
             self.hist_undo_btn.setText(t("hist.undo"))
+            self.hist_failed_btn.setText(t("hist.failed"))
             self.hist_export_btn.setText(t("hist.export"))
             self.hist_clear_btn.setText(t("hist.clear"))
         if hasattr(self, "output_mode_combo"):
