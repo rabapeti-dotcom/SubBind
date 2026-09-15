@@ -56,6 +56,30 @@ class TestF52APairRollback(unittest.TestCase):
         rollback_copied_files([missing, kept])
         self.assertFalse(kept.exists())
 
+    def test_copied_reports_unlink_error_and_continues(self):
+        failed = self.tmp / "failed.bin"
+        removed = self.tmp / "removed.bin"
+        failed.write_bytes(b"FAIL")
+        removed.write_bytes(b"REMOVE")
+        original_unlink = Path.unlink
+
+        def failing_unlink(path, *args, **kwargs):
+            if path == failed:
+                raise OSError("Simulated rollback unlink error")
+            return original_unlink(path, *args, **kwargs)
+
+        Path.unlink = failing_unlink
+        try:
+            failures = rollback_copied_files([failed, removed])
+        finally:
+            Path.unlink = original_unlink
+
+        self.assertTrue(failed.exists())
+        self.assertFalse(removed.exists())
+        self.assertEqual(len(failures), 1)
+        self.assertEqual(failures[0]["path"], str(failed))
+        self.assertIn("Simulated rollback unlink error", failures[0]["error"])
+
     def test_renamed_restored_in_reverse(self):
         old_a = self.tmp / "old_a.bin"
         old_b = self.tmp / "old_b.bin"
@@ -94,6 +118,34 @@ class TestF52APairRollback(unittest.TestCase):
         self.assertFalse(new_a.exists())
         self.assertTrue(old_b.exists())
         self.assertEqual(old_b.read_bytes(), b"B")
+
+    def test_renamed_reports_rename_error_and_continues(self):
+        old_a = self.tmp / "old_a.bin"
+        new_a = self.tmp / "new_a.bin"
+        old_b = self.tmp / "old_b.bin"
+        new_b = self.tmp / "new_b.bin"
+        new_a.write_bytes(b"A")
+        new_b.write_bytes(b"B")
+        original_rename = Path.rename
+
+        def failing_rename(path, target):
+            if path == new_a:
+                raise OSError("Simulated rollback rename error")
+            return original_rename(path, target)
+
+        Path.rename = failing_rename
+        try:
+            failures = rollback_renamed_files([(old_a, new_a), (old_b, new_b)])
+        finally:
+            Path.rename = original_rename
+
+        self.assertTrue(new_a.exists())
+        self.assertFalse(new_b.exists())
+        self.assertTrue(old_b.exists())
+        self.assertEqual(len(failures), 1)
+        self.assertEqual(failures[0]["old"], str(old_a))
+        self.assertEqual(failures[0]["new"], str(new_a))
+        self.assertIn("Simulated rollback rename error", failures[0]["error"])
 
 
 if __name__ == "__main__":

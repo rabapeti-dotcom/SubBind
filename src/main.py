@@ -3476,16 +3476,41 @@ class MainWindow(QMainWindow):
 
                 if pair_failed:
                     # A már létrehozott célfájlokat visszavesszük.
-                    rollback_copied_files(pair_created)
+                    copy_rollback_failures = rollback_copied_files(pair_created)
                     # Helyben átnevezésnél visszanevezzük az addig elkészült tagokat.
-                    rollback_renamed_files(pair_renames)
-                    for pair_item, _, _ in pair:
-                        if pair_item.copy_status == "Másolás..." or pair_item.copy_status == "Átnevezés...":
+                    rename_rollback_failures = rollback_renamed_files(pair_renames)
+                    copy_rollback_errors = {
+                        file_identity_key(entry["path"]): entry["error"]
+                        for entry in copy_rollback_failures
+                    }
+                    rename_rollback_errors = {
+                        file_identity_key(entry["new"]): entry["error"]
+                        for entry in rename_rollback_failures
+                    }
+                    rollback_errors = copy_rollback_errors | rename_rollback_errors
+
+                    for change in pending_history:
+                        if file_identity_key(change["new"]) in rollback_errors:
+                            record["changes"].append(change)
+
+                    for pair_item, old_path, new_path in pair:
+                        rollback_error = rollback_errors.get(file_identity_key(new_path))
+                        if rollback_error:
+                            pair_item.copy_status = "Hiba"
+                            pair_item.copy_percent = 0
+                            pair_item.note = (
+                                "A pár rollbackje sikertelen; a célfájl megmaradt: "
+                                f"{new_path} — {rollback_error}"
+                            )
+                            pair_item.path = str(new_path)
+                        elif pair_item.copy_status == "Másolás..." or pair_item.copy_status == "Átnevezés...":
                             pair_item.copy_status = "Hiba"
                             pair_item.copy_percent = 0
                             pair_item.note = "A videó + felirat pár visszaállítva"
+                            pair_item.path = str(old_path)
+                        else:
+                            pair_item.path = str(old_path)
                         failed.append((pair_item, pair_item.note or "A teljes pár visszaállítva"))
-                        pair_item.path = str(next((old for it, old, _ in pair if it is pair_item), Path(pair_item.path)))
                     current += len(pair)
                     self._progress_step(current, total_changes, progress_label, "Pár visszaállítva")
                     continue

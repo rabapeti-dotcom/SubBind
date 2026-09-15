@@ -57,6 +57,25 @@ class TestF51CopyToDestination(unittest.TestCase):
         self.assertEqual(self.dest.read_bytes(), PAYLOAD)
         self.assertFalse(leftover.exists())
 
+    def test_final_destination_stat_error_does_not_fail_copy(self):
+        original_stat = Path.stat
+
+        def stat_with_final_destination_error(path, *args, **kwargs):
+            if path == self.dest:
+                raise OSError("Simulated final destination stat error")
+            return original_stat(path, *args, **kwargs)
+
+        Path.stat = stat_with_final_destination_error
+        try:
+            stat_result = copy_to_destination(self.src, self.dest)
+        finally:
+            Path.stat = original_stat
+
+        self.assertTrue(self.dest.is_file())
+        self.assertEqual(self.dest.read_bytes(), PAYLOAD)
+        self.assertFalse(Path(str(self.dest) + ".part").exists())
+        self.assertEqual(stat_result.st_size, len(PAYLOAD))
+
     def test_oserror_cleans_part_and_does_not_write_dest(self):
         missing = self.tmp / "missing.bin"
         with self.assertRaises(OSError):

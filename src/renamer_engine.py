@@ -523,8 +523,9 @@ def copy_to_destination(old, new, progress=None):
                 if progress is not None:
                     progress(copied, total_size)
         shutil.copystat(old, tmp)
+        result = tmp.stat()
         tmp.replace(new)
-        return new.stat()
+        return result
     except OSError:
         try:
             if tmp.exists():
@@ -538,30 +539,38 @@ def rollback_copied_files(paths):
     """Párban már véglegesített másolatok törlése, létrehozás fordított sorrendjében.
 
     .part-ot nem bántja (az a hibázó fájl except/copy_to_destination ága).
-    Rollback OSError nyelése: a többi tagot akkor is megkíséreljük.
+    A többi tagot rollback-hiba után is megkísérli. Visszatérés: a
+    megmaradt célfájlok és a hozzájuk tartozó hibák listája.
     """
+    failures = []
     for made in reversed(list(paths or ())):
         try:
             made = Path(made)
             if made.exists():
                 made.unlink()
-        except OSError:
-            pass
+        except OSError as exc:
+            failures.append({"path": str(made), "error": str(exc)})
+    return failures
 
 
 def rollback_renamed_files(changes):
     """Helyben átnevezett pártagok visszanevezése, átnevezés fordított sorrendjében.
 
-    Csak ha a new létezik. Ha egy visszanevezés hibázik, a többit tovább próbáljuk.
+    Csak ha a new létezik. A többi tagot rollback-hiba után is megkísérli.
+    Visszatérés: a megmaradt új nevek és a hozzájuk tartozó hibák listája.
     """
+    failures = []
     for old_path, new_path in reversed(list(changes or ())):
         try:
             old_path = Path(old_path)
             new_path = Path(new_path)
             if new_path.exists():
                 new_path.rename(old_path)
-        except OSError:
-            pass
+        except OSError as exc:
+            failures.append({
+                "old": str(old_path), "new": str(new_path), "error": str(exc),
+            })
+    return failures
 
 
 def verify_copy_undo(changes):
