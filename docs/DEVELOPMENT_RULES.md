@@ -1,4 +1,4 @@
-# Development rules — SorozatRenamero 0.6.1
+# Development rules — SubBind 0.6.1
 
 A tényleges munkamódszer a 0.6.1 felirat-preferencia munkamenetből.
 Ezek a szabályok a tartós állapot kanonikus forrásai a roadmapdel és a döntési dokumentummal együtt.
@@ -76,8 +76,9 @@ Ne találjunk ki hiányzó viselkedést. Kérdezz, vagy zárd a fázist auditál
 
 ## Checkpoint
 
-- Version: 0.6.1
-- Stabil commit: 90b41c4
+- Version: 0.6.1 RC1
+- origin/main: b8c38c3
+- RC1 GUI-stack: elfogadva (loc, Advanced, theme) — working tree, commit csak kérésre
 - Completed: L1, L2.1, L2.2, L2.3, L2.4
 - L7 deferred
 - Tervezett kiadás: 2026-09-20

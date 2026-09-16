@@ -2,10 +2,10 @@
 setlocal EnableExtensions
 cd /d "%~dp0"
 
-title Sorozat es film atnevezo - SETUP 0.6.1-TEST
+title SubBind - SETUP 0.6.1-TEST
 
 echo ==========================================================
-echo   Sorozat es film atnevezo - SETUP
+echo   SubBind - SETUP
 echo   0.6.1-TEST
 echo ==========================================================
 echo.

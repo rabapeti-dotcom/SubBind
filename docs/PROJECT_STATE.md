@@ -1,51 +1,78 @@
-# Project state — SorozatRenamero 0.6.1
+# Project state — SubBind 0.6.1 RC1
 
 Mentés dátuma: 2026-09-16.
-Stabil commit: **90b41c4** (`Fix guide rename gate consistency`).
-HEAD = origin/main = `90b41c4`.
 A kanonikus döntések: `docs/DECISIONS.md`. A munkamódszer: `docs/DEVELOPMENT_RULES.md`.
 
 ## Repository
 
-- Root: `C:\Users\hunga\OneDrive\Asztali gép\SorozatAtnevezo_v0.3.1_PySide6_Projekt\SorozatRenamero_0.6.1-TEST_TISZTA`
-- Remote: `https://github.com/rabapeti-dotcom/SorozatRenamero.git`
+- Product: **SubBind** 0.6.1 — Smart Subtitle & Media Renamer
+- Fejlesztő: **BadMusicHUN**
+- Licenc: **GNU GPL v3.0**
+- Root (lokális working copy): `<PROJECT_ROOT>\SorozatRenamero_0.6.1-TEST_TISZTA`
+- GitHub repository: **SubBind**
+- Remote: `https://github.com/rabapeti-dotcom/SubBind.git`
 - Branch: `main`
 - Verzió: **0.6.1** (`src/version.py`)
+
+## Git állapot (élő)
+
+- **HEAD / origin/main:** `b8c38c3` (`Update 0.6.1 release documentation`)
+- A `90b41c4` (`Fix guide rename gate consistency`) a P1 guide/rename kapu commit; **nem** a jelenlegi HEAD.
+- A SubBind 0.6.1 **RC1 working tree** (branding, GPL, localization, Advanced mode, elfogadott TV2.x GUI-stack) **még nincs commitolva és nincs pusholva**.
+- Új **SubBind.exe** ebből a fából **még nincs elkészítve**. A `TEST_96` ezért SKIP, amíg nincs `dist\SubBind\SubBind.exe`.
 
 ## Mi a projekt
 
 Hordozható Windows PySide6 alkalmazás: videó- és feliratfájlok párosítása, előnézete, átnevezése vagy másolása.
 
+Freeware és open source, GNU GPL v3.0 alatt. A motor ebben a körben nem változott.
+
 A mappastruktúra: `docs/PROJEKT_STRUKTURA.txt`.
 
-## Release állapot (2026-09-16)
+## RC1 tartalom (elfogadott)
 
-A 0.6.1 **final RC** a `90b41c4` commitból készült. Nincs nyitott P0 vagy P1.
+A következő **az RC1 része** (working tree, commit előtt):
+
+- SubBind branding (`APP_NAME`, Welcome, EXE-név `SubBind.exe`)
+- Fejlesztői identitás: BadMusicHUN
+- LICENSE + AUTHORS + public README (English-first + Magyar)
+- Teljes HU/EN localization, lokalizált Help
+- Advanced mode (Haladó mód)
+- Elfogadott TV2.x theme/UI (`src/ui_theme.py` + a WT `src/main.py`)
+- GUI-stack: `src/main.py` + `src/i18n.py` + `src/ui_theme.py`
+- `GUI_27` localization regression teszt
+
+A motor (`src/renamer_engine.py`) stabil; ebben a körben nem módosult.
+A P1 guide/rename kapu (`90b41c4`) a GUI-stackben megmaradt.
+
+## Release állapot
+
+Nincs nyitott P0 vagy P1.
 
 | Tétel | Állapot |
 |---|---|
-| Stabil commit | `90b41c4` |
-| Final RC EXE | 2026-09-16 12:34:59, **2 258 579** bájt |
-| Artifact | `dist\SorozatEsFilmAtnevezo\` (exe + `_internal`) |
+| origin/main HEAD | `b8c38c3` |
+| P1 guide/rename | `90b41c4`, `GUI_26` PASS (benne van a WT GUI-stackben) |
+| RC1 commit / push | **nincs** |
+| Új SubBind EXE | **nincs** |
+| Várt artifact | `dist\SubBind\` (exe + `_internal`) — következő build kör |
 | Portable data | sidecar `data/` az exe mellett; nem APPDATA |
 | Fejlesztői `data/` | a projekt gyökér `data/` **nem** csomagolandó |
-| P0 | nincs |
-| P1 | nincs (guide/rename kapu: `90b41c4`, `GUI_26` PASS) |
 | P2 | `testing.test_runner` bekerül a PYZ-be; frozenben a Tesztlabor UI rejtve |
-| TV2.x | kísérleti; **nem** a 0.6.1 része (`src/i18n.py` unstaged, `src/ui_theme.py` untracked) |
 
-Tervezett felhasználói kiadási dátum (változatlan, nem a jelenlegi checkpoint dátuma): **2026-09-20**.
+Tervezett felhasználói kiadási dátum: **2026-09-20**.
 
 ## Funkcionális állapot
 
 Lezárva és PASS: **C.1, L1, L2.1, L2.2, L2.3, L2.4**.
 
-Utána (stabil `main`, 0.6.1 verziószám változatlan):
+Utána (0.6.1 verziószám változatlan):
 
 - M1 tesztizoláció (`3369084`) — `TEST_77` / `GUI_16` többé nem ismert FAIL
 - L8.4 GUI design + tesztizoláció (`5c0d3bb`) — **nem** teljes L8 fizikai GUI-regresszió
 - Rollback / History / partial undo (`fbf0666`, `f916f97`, `e623d24`)
 - Guide/rename kapu (`90b41c4`)
+- RC1 GUI-stack (loc, Help, Advanced mode, elfogadott theme) — working tree, commit előtt
 
 | Fázis | Állapot |
 |---|---|
@@ -58,42 +85,34 @@ Utána (stabil `main`, 0.6.1 verziószám változatlan):
 | L7 — LANGS expansion | **deferred** (2026-08-27; új követelmény nélkül nem indul) |
 | L8 — teljes regresszió + fizikai GUI | nincs lezárva; az RC automatizált Engine/GUI regresszióra épül |
 
-## Tesztállapot (2026-09-16, `90b41c4`)
+## Tesztállapot
+
+Utolsó mért (2026-09-16, docs-szinkron után): GUI **29 PASS / 0 FAIL**. Engine **55 PASS / 0 FAIL**. `TEST_96` **SKIP** (nincs új `dist\SubBind\SubBind.exe`).
 
 | Csomag | Eredmény |
 |---|---|
-| Engine (`TEST_*.py`) | **56 PASS / 0 FAIL** |
-| GUI (`GUI_*.py`) | **28 PASS / 0 FAIL** |
-| VALOS | a teljes Engine része; 7 script |
-| L2 gate | `TEST_86`, `TEST_87`, `TEST_97`, `GUI_22`, `GUI_23`, `GUI_24` — PASS |
-| `TEST_96` (final RC EXE) | **PASS** |
+| GUI (`GUI_*.py`) | **29** fájl (`GUI_27`-tel) |
+| Engine (`TEST_*.py`, TEST_96 nélkül) | utolsó futás PASS |
+| `TEST_96` (frozen EXE) | **SKIP**, amíg nincs `dist\SubBind\SubBind.exe` |
 | `GUI_26` (guide/rename kapu) | **PASS** |
+| `GUI_27` (HU/EN loc) | **PASS** |
 
-Releváns engine/history tesztek: `TEST_90` F51, `TEST_91` F52A, `TEST_92` F52B, `TEST_97` L2.4, `TEST_98` F52 History, `GUI_14`, `GUI_25`.
-
-`TEST_77` / `GUI_16`: izoláció után **PASS**. A 2026-08-26-os destination FAIL diagnózis történeti.
-
-## TV2.x
-
-Kísérleti working-tree munka, **nem** a 0.6.1 release.
-
-- `src/i18n.py` — unstaged
-- `src/ui_theme.py` — untracked
-- A TV2.x `main.py` nincs a stabil fában; a `90b41c4` `src/main.py` a release.
-
-Ne merge-eld, ne stage-eld, ne buildeld a 0.6.1 EXE-be.
+`TEST_77` / `GUI_16`: izoláció után **PASS**.
 
 ## Következő lépés
 
-A 0.6.1 RC artifact kiadható a `90b41c4` fából: `dist\SorozatEsFilmAtnevezo\` (projekt-gyökér `data/` nélkül).
+1. RC1 working tree commit + push (csak kérésre).
+2. Új portable EXE: `build_exe.bat` → `dist\SubBind\SubBind.exe`.
+3. `TEST_96` az új artifacton.
 
 L7 továbbra is deferred. Teljes L8 fizikai GUI nincs lezárva; ez nem release-blocker a jelenlegi automatizált regresszió mellett.
 
 ## Checkpoint
 
-- Version: 0.6.1
-- Stabil commit: 90b41c4
-- Completed: C.1, L1, L2.1, L2.2, L2.3, L2.4 + rollback/History + guide/rename kapu
-- Teszt: Engine 56/0, GUI 28/0, TEST_96 PASS
+- Product: SubBind 0.6.1 RC1
+- origin/main: **b8c38c3**
+- RC1 GUI-stack: working tree, nincs commit/push
+- Motor: változatlan ebben a körben
+- EXE: új SubBind build nincs
 - L7 deferred
 - Tervezett kiadás: 2026-09-20

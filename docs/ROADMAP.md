@@ -1,4 +1,4 @@
-# Roadmap — SorozatRenamero 0.6.1
+# Roadmap — SubBind 0.6.1
 
 Ez a fájl a felirat-preferencia (`subtitle_pref`) fejlesztés kanonikus ütemterve.
 A történeti (eredeti) fázisnevek nem lettek utólag átnevezve.
@@ -21,7 +21,7 @@ Ezek a fázisnevek maradnak a történeti hivatkozás.
 
 L7 történeti/halasztott fázis marad; a fázis **nincs törölve**.
 L7 csak új, explicit követelmény esetén indulhat.
-L8 teljes fizikai GUI nincs completed; a 0.6.1 RC automatizált Engine/GUI regresszióra épül (`90b41c4`).
+L8 teljes fizikai GUI nincs completed; a 0.6.1 RC automatizált Engine/GUI regresszióra épül.
 
 ## Tényleges implementációs bontás (L2–L6)
 
@@ -61,22 +61,32 @@ Explicit döntés: L7 a 2026-09-20 release céljához **jelenleg nem indokolt** 
 - Nincs dokumentált release-blokkoló hiány LANGS-bővítésre
 - Parserben ismert, pref-ként nem választható nyelvek: külön kérdés
 
-## 0.6.1 RC (2026-09-16)
+## 0.6.1 motor RC (2026-09-16, történeti)
 
-Stabil commit: **90b41c4**. Engine 56 PASS / 0 FAIL, GUI 28 PASS / 0 FAIL, `TEST_96` a final RC EXE-n PASS.
+Akkori stabil motor/P1 commit: **90b41c4**. Engine 56 PASS / 0 FAIL, GUI 28 PASS / 0 FAIL, `TEST_96` a akkor készült EXE-n PASS.
 P0 / P1: nincs. P2: `testing.test_runner` a PYZ-ben; frozen Tesztlabor UI rejtve.
-TV2.x kísérleti, nem a 0.6.1 része.
+
+Ez a checkpoint **megelőzi** a SubBind RC1 GUI-stacket (localization, Advanced mode, elfogadott theme). Nem a jelenlegi origin/main HEAD.
+
+## 0.6.1 RC1 (aktuális)
+
+- Product: SubBind. Fejlesztő: BadMusicHUN. Licenc: GNU GPL v3.0.
+- origin/main HEAD: **b8c38c3**.
+- Elfogadott GUI-stack az RC1 része: HU/EN loc, Help, Advanced mode, TV2.x theme (`main.py` + `i18n.py` + `ui_theme.py` + `GUI_27`).
+- RC1 working tree **nincs commitolva/pusholva**. Új `SubBind.exe` **nincs**.
+- Motor ebben a körben nem változott.
 
 Tervezett felhasználói kiadás: **2026-09-20** (nem a checkpoint dátuma).
 
 ## Következő lépés
 
-L7 deferred. A 0.6.1 RC artifact (`dist\SorozatEsFilmAtnevezo\`) a `90b41c4` fából kiadható; a projekt-gyökér `data/` nem csomagolandó.
+L7 deferred. RC1 commit/push csak kérésre. Új artifact: `build_exe.bat` → `dist\SubBind\` (projekt-gyökér `data/` nélkül). `TEST_96` az új EXE után.
 
 ## Checkpoint
 
-- Version: 0.6.1
-- Stabil commit: 90b41c4
+- Version: 0.6.1 RC1
+- origin/main: b8c38c3
+- RC1 GUI-stack: working tree
 - Completed: C.1, L1, L2.1, L2.2, L2.3, L2.4
 - L7 deferred
 - Tervezett kiadás: 2026-09-20

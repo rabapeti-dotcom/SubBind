@@ -1,16 +1,20 @@
-Sorozat & film átnevező — 0.6.1
+SubBind — 0.6.1
 │
+│  Smart Subtitle & Media Renamer
 │  Hordozható Windows PySide6 alkalmazás: videó- és feliratfájlok
 │  párosítása, előnézete, átnevezése vagy másolása.
 │
 │  Release: felhasználói verzió 0.6.1. Portable sidecar data/ az exe mellett.
 │  A projekt-gyökér data/ fejlesztői; a kiadott csomagba nem kerül.
 │  Frozen buildben a Tesztlabor és a Patch Center nincs a főablakban.
+│  Licenc: GNU GPL v3.0. Fejlesztő: BadMusicHUN.
 │
 ├── src/
 │   ├── main.py                 # GUI, orchestration, settings/history, copy/undo UI
+│   ├── i18n.py                 # HU/EN felület (RC1)
+│   ├── ui_theme.py             # elfogadott TV2.x theme/QSS (RC1)
+│   ├── version.py              # APP_NAME=SubBind, APP_VERSION=0.6.1, AUTHOR=BadMusicHUN
 │   ├── renamer_engine.py       # parse, sablon, párosítás, célútvonal, másolás/undo
-│   ├── version.py              # APP_NAME, APP_VERSION=0.6.1, APP_VERSION_DEV
 │   └── testing/
 │       ├── __init__.py
 │       └── test_runner.py      # Tesztlabor (csak DEV UI; frozen PYZ-be kerülhet, gomb rejtve)
@@ -25,7 +29,7 @@ Sorozat & film átnevező — 0.6.1
 │   ├── 05_KIJELOLES/
 │   ├── 06_HIBAK_ES_BIZTONSAG/
 │   ├── 07_ELOZMENY/
-│   ├── 08_GUI_INTEGRACIO/          # GUI_*.py — 28 fájl (+ FUTTATAS_GUI_TESTEK.py)
+│   ├── 08_GUI_INTEGRACIO/          # GUI_*.py — 29 fájl (+ FUTTATAS_GUI_TESTEK.py, GUI_27)
 │   ├── 09_VALOS_FAJLNEVEK/         # TEST_70–76 — 7 fájl
 │   └── 10_ENGINE_STABILIZALAS/     # TEST_80–98 (engine + portable/release + History)
 │
@@ -38,8 +42,10 @@ Sorozat & film átnevező — 0.6.1
 ├── backups/                        # .gitignore
 ├── setup.bat
 ├── run_dev.bat                     # .venv → src/main.py
-├── build_exe.bat                   # PyInstaller → dist/SorozatEsFilmAtnevezo/
+├── build_exe.bat                   # PyInstaller → dist/SubBind/
 ├── requirements.txt                # PySide6>=6.7,<7
+├── LICENSE                         # GNU GPL v3.0
+├── AUTHORS
 ├── README.md
 └── .gitignore                      # többek közt data/, dist/, build/, *.spec
 │

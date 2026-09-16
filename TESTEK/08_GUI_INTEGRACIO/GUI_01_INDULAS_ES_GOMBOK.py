@@ -18,6 +18,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 
 try:
     from main import MainWindow
+    from version import APP_NAME
 except Exception as exc:
     raise RuntimeError(f"MainWindow nem tölthető be: {SRC / 'main.py'}") from exc
 
@@ -74,7 +75,7 @@ class GuiBase(unittest.TestCase):
 
 class TestGuiStartup(GuiBase):
     def test_mainwindow_and_core_buttons_exist(self):
-        self.assertEqual(self.win.windowTitle().startswith("Sorozat"), True)
+        self.assertTrue(self.win.windowTitle().startswith(APP_NAME))
         self.assertTrue(hasattr(self.win, "add_btn"))
         self.assertFalse(hasattr(self.win, "test_lab_btn"))
         self.assertFalse(hasattr(self.win, "patch_btn"))

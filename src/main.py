@@ -10,14 +10,18 @@ import tempfile
 from pathlib import Path
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QTimer, QPoint, QSize, QDir, QUrl
-from PySide6.QtGui import QFont, QAction, QPalette, QColor, QIcon, QPixmap, QPainter, QPen, QBrush
+from PySide6.QtCore import Qt, QTimer, QSize, QDir, QUrl, QRect, QEvent
+from PySide6.QtGui import (
+    QFont, QAction, QPalette, QColor, QIcon, QPixmap, QPainter, QPen, QBrush,
+    QPainterPath,
+)
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QTabWidget, QTableWidget, QTableWidgetItem,
     QLineEdit, QComboBox, QCheckBox, QTextEdit, QMessageBox, QFileDialog,
     QGroupBox, QGridLayout, QDialog, QDialogButtonBox, QMenu, QFrame,
-    QAbstractItemView, QHeaderView, QProgressBar, QListView, QTreeView, QFileSystemModel
+    QAbstractItemView, QHeaderView, QProgressBar, QListView, QTreeView,
+    QFileSystemModel, QToolTip, QSizePolicy, QTabBar,
 )
 
 from version import APP_NAME, APP_VERSION, AUTHOR
@@ -25,7 +29,14 @@ from i18n import (
     MODE_IDS, MODE_KEYS, OUTPUT_IDS, OUTPUT_KEYS, SORT_IDS, SORT_KEYS,
     SUBTITLE_PREF_KEYS,
     t, set_active_language, fill_combo, combo_id, set_combo_id, status_text,
+    note_text, hist_op_text, hist_status_text,
     STATUS_DISPLAY_KEYS, STRINGS,
+)
+from ui_theme import (
+    theme_tokens, build_app_stylesheet, copy_state_colors,
+    primary_button_stylesheet, filled_button_stylesheet,
+    rename_button_stylesheet, plain_button_stylesheet,
+    review_button_stylesheet,
 )
 from renamer_engine import (
     parse_item, ALL_EXTS, common_title, render_template,
@@ -292,16 +303,86 @@ def make_flag_icon(language):
     return QIcon(pix)
 
 
-def make_theme_icon(dark=False):
-    """Modern, kör alakú világos/sötét ikon."""
-    pix = QPixmap(26, 26)
+def show_test_version_mark():
+    """Test Version 2 jelölés: frozen / release buildben nem jelenik meg."""
+    if getattr(sys, "frozen", False):
+        return False
+    if _env_flag_on(RELEASE_ENV):
+        return False
+    return True
+
+
+def _set_qss_state(widget, name, value):
+    if widget is None:
+        return
+    widget.setProperty(name, value)
+    style = widget.style()
+    style.unpolish(widget)
+    style.polish(widget)
+    widget.update()
+
+
+def _i18n_max_px(fm, *keys):
+    """Legszélesebb HU/EN felirat pixelben. Layout-ugrás elkerülésére."""
+    widest = 0
+    for key in keys:
+        found = False
+        for lang in ("hu", "en"):
+            text = (STRINGS.get(lang) or {}).get(key)
+            if text is None:
+                continue
+            found = True
+            widest = max(widest, fm.horizontalAdvance(str(text)))
+        if not found:
+            widest = max(widest, fm.horizontalAdvance(str(key)))
+    return widest
+
+
+def _i18n_map_max_px(fm, key_map):
+    return _i18n_max_px(fm, *key_map.values())
+
+
+class _StableTabBar(QTabBar):
+    """Tab szélesség a hosszabb HU/EN felirathoz igazodik, nyelvváltáskor nem ugrik."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._min_widths = {}
+
+    def set_min_widths(self, widths):
+        self._min_widths = dict(widths or {})
+        self.updateGeometry()
+
+    def tabSizeHint(self, index):
+        size = super().tabSizeHint(index)
+        minimum = self._min_widths.get(index, 0)
+        if minimum:
+            size.setWidth(max(size.width(), int(minimum)))
+        return size
+
+
+def make_theme_toggle_icon(dark=False):
+    """Kompakt fél-világos / fél-sötét kör. Nincs nap, hold, kapcsoló vagy felirat."""
+    light_tok = theme_tokens(False)
+    dark_tok = theme_tokens(True)
+    pix = QPixmap(28, 26)
     pix.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pix)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    color = QColor("#171717") if dark else QColor("#f4f4f4")
-    painter.setPen(QPen(QColor("#777777"), 1))
-    painter.setBrush(QBrush(color))
-    painter.drawEllipse(3, 3, 20, 20)
+    cx, cy, r = 14, 13, 11
+    disc = QRect(cx - r, cy - r, r * 2, r * 2)
+
+    clip = QPainterPath()
+    clip.addEllipse(disc)
+    painter.setClipPath(clip)
+    painter.fillRect(cx - r, cy - r, r, r * 2, QColor(light_tok["surface"]))
+    painter.fillRect(cx, cy - r, r, r * 2, QColor(dark_tok["window"]))
+    painter.setClipping(False)
+
+    rim = QColor(dark_tok["window_rim"] if dark else light_tok["border_strong"])
+    painter.setPen(QPen(rim, 1))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawEllipse(disc)
     painter.end()
     return QIcon(pix)
 
@@ -405,6 +486,7 @@ class StartConfirmDialog(QDialog):
         root.setSpacing(10)
 
         title = QLabel(t("confirm.title"))
+        title.setObjectName("welcomeHeadline")
         title.setStyleSheet("font-size: 14pt; font-weight: 700;")
         title.setWordWrap(True)
         root.addWidget(title)
@@ -440,12 +522,21 @@ class StartConfirmDialog(QDialog):
             root.addWidget(folder)
 
         note = QLabel(t("confirm.keep" if copy_mode else "confirm.change"))
+        parent_win = parent if parent is not None else None
+        dark = bool(
+            parent_win is not None
+            and getattr(parent_win, "appearance", "Világos") == "Sötét"
+        )
+        tok = theme_tokens(dark)
         if copy_mode:
-            note.setStyleSheet("color: #2e7d32; font-weight: 600;")
+            note.setStyleSheet(
+                f"color: {tok['success']}; font-weight: 600;"
+            )
         else:
             note.setStyleSheet(
-                "color: #b71c1c; font-weight: 600; padding: 8px; "
-                "background: #fbf6f6; border: 1px solid #d7b6b6; border-radius: 6px;"
+                f"color: {tok['danger']}; font-weight: 600; padding: 8px; "
+                f"background: {tok['danger_soft']}; border: 1px solid {tok['danger']}; "
+                f"border-radius: 6px;"
             )
         note.setWordWrap(True)
         root.addWidget(note)
@@ -459,10 +550,8 @@ class StartConfirmDialog(QDialog):
             t("confirm.start"), QDialogButtonBox.ButtonRole.AcceptRole
         )
         start_btn.setDefault(True)
-        start_btn.setStyleSheet(
-            "QPushButton { background: #2e7d32; color: white; font-weight: bold; "
-            "padding: 6px 18px; border-radius: 6px; }"
-        )
+        start_btn.setObjectName("btnSuccess")
+        start_btn.setStyleSheet(filled_button_stylesheet(tok, "success"))
         cancel_btn.clicked.connect(self.reject)
         start_btn.clicked.connect(self.accept)
         root.addWidget(buttons)
@@ -471,49 +560,22 @@ class StartConfirmDialog(QDialog):
 class WelcomeDialog(QDialog):
     def __init__(self, parent=None, language="hu", show_again=True):
         super().__init__(parent)
-        self.setFixedSize(760, 570)
+        self.setMinimumSize(780, 600)
+        self.resize(800, 620)
         self.setModal(True)
         self.selected_language = language
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(22, 18, 22, 18)
+        root.setContentsMargins(28, 22, 28, 20)
+        root.setSpacing(12)
 
-        self.headline = QLabel()
-        self.headline.setStyleSheet("font-size: 16pt; font-weight: 700;")
-        root.addWidget(self.headline)
-
-        self.intro = QLabel()
-        self.intro.setWordWrap(True)
-        root.addWidget(self.intro)
-
-        self.example = QGroupBox()
-        ex_layout = QVBoxLayout(self.example)
-        self.example_original = QLabel()
-        self.example_original.setStyleSheet("font-weight: 700;")
-        ex_layout.addWidget(self.example_original)
-        for value in (
-            "film.cime.s01e01.web-dl.aac2.0.h.264-tdi.mkv",
-            "FILM.CIME.S01E01.The.Eyes.ATV.WEB-DL.hu.srt",
-        ):
-            v = QLabel(value)
-            v.setFont(QFont("Consolas", 9))
-            ex_layout.addWidget(v)
-        self.example_new = QLabel()
-        self.example_new.setStyleSheet("font-weight: 700;")
-        ex_layout.addWidget(self.example_new)
-        for value in ("film.cime.S01E01.mkv", "film.cime.S01E01.srt"):
-            v = QLabel(value)
-            v.setFont(QFont("Consolas", 9))
-            ex_layout.addWidget(v)
-        root.addWidget(self.example)
-
-        self.note = QLabel()
-        self.note.setWordWrap(True)
-        root.addWidget(self.note)
-
-        lang_row = QHBoxLayout()
+        top = QHBoxLayout()
+        self.kicker = QLabel()
+        self.kicker.setObjectName("welcomeKicker")
+        top.addWidget(self.kicker)
+        top.addStretch(1)
         self.language_label = QLabel()
-        lang_row.addWidget(self.language_label)
+        top.addWidget(self.language_label)
         self.hu_btn = QPushButton()
         self.en_btn = QPushButton()
         self.hu_btn.setIcon(make_flag_icon("hu"))
@@ -523,11 +585,69 @@ class WelcomeDialog(QDialog):
         for btn in (self.hu_btn, self.en_btn):
             btn.setCheckable(True)
             btn.setFixedSize(42, 32)
-            lang_row.addWidget(btn)
-        lang_row.addStretch(1)
+            top.addWidget(btn)
         self.hu_btn.clicked.connect(lambda: self.select_language("hu"))
         self.en_btn.clicked.connect(lambda: self.select_language("en"))
-        root.addLayout(lang_row)
+        root.addLayout(top)
+
+        self.headline = QLabel()
+        self.headline.setObjectName("welcomeHeadline")
+        self.headline.setWordWrap(True)
+        root.addWidget(self.headline)
+
+        self.intro = QLabel()
+        self.intro.setObjectName("welcomeIntro")
+        self.intro.setWordWrap(True)
+        root.addWidget(self.intro)
+
+        self.example = QGroupBox()
+        self.example.setObjectName("exampleCard")
+        ex_layout = QHBoxLayout(self.example)
+        ex_layout.setContentsMargins(14, 16, 14, 12)
+        ex_layout.setSpacing(12)
+
+        orig_col = QVBoxLayout()
+        orig_col.setSpacing(4)
+        self.example_original = QLabel()
+        self.example_original.setObjectName("exampleHeading")
+        orig_col.addWidget(self.example_original)
+        self.ex_orig_video = QLabel()
+        self.ex_orig_sub = QLabel()
+        for lab in (self.ex_orig_video, self.ex_orig_sub):
+            lab.setObjectName("monoSample")
+            lab.setTextInteractionFlags(
+                Qt.TextInteractionFlag.TextSelectableByMouse
+            )
+            orig_col.addWidget(lab)
+        orig_col.addStretch(1)
+        ex_layout.addLayout(orig_col, 1)
+
+        arrow = QLabel("→")
+        arrow.setObjectName("arrowLabel")
+        arrow.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        ex_layout.addWidget(arrow)
+
+        new_col = QVBoxLayout()
+        new_col.setSpacing(4)
+        self.example_new = QLabel()
+        self.example_new.setObjectName("exampleHeading")
+        new_col.addWidget(self.example_new)
+        self.ex_new_video = QLabel()
+        self.ex_new_sub = QLabel()
+        for lab in (self.ex_new_video, self.ex_new_sub):
+            lab.setObjectName("monoSample")
+            lab.setTextInteractionFlags(
+                Qt.TextInteractionFlag.TextSelectableByMouse
+            )
+            new_col.addWidget(lab)
+        new_col.addStretch(1)
+        ex_layout.addLayout(new_col, 1)
+        root.addWidget(self.example)
+
+        self.note = QLabel()
+        self.note.setObjectName("welcomeNote")
+        self.note.setWordWrap(True)
+        root.addWidget(self.note)
 
         root.addStretch(1)
 
@@ -541,8 +661,14 @@ class WelcomeDialog(QDialog):
         bottom.addWidget(self.first_btn)
 
         self.ok_btn = QPushButton()
+        self.ok_btn.setObjectName("btnPrimary")
         self.ok_btn.setDefault(True)
         self.ok_btn.clicked.connect(self.accept)
+        dark = (
+            parent is not None
+            and getattr(parent, "appearance", "Világos") == "Sötét"
+        )
+        self.ok_btn.setStyleSheet(primary_button_stylesheet(theme_tokens(dark)))
         bottom.addWidget(self.ok_btn)
 
         root.addLayout(bottom)
@@ -550,11 +676,16 @@ class WelcomeDialog(QDialog):
 
     def retranslate(self):
         self.setWindowTitle(t("welcome.title"))
+        self.kicker.setText(t("welcome.kicker"))
         self.headline.setText(t("welcome.headline"))
         self.intro.setText(t("welcome.intro"))
         self.example.setTitle(t("welcome.example"))
         self.example_original.setText(t("welcome.original"))
         self.example_new.setText(t("welcome.new_name"))
+        self.ex_orig_video.setText(t("welcome.ex_orig_video"))
+        self.ex_orig_sub.setText(t("welcome.ex_orig_sub"))
+        self.ex_new_video.setText(t("welcome.ex_new_video"))
+        self.ex_new_sub.setText(t("welcome.ex_new_sub"))
         self.note.setText(t("welcome.note"))
         self.language_label.setText(t("welcome.language"))
         self.hu_btn.setToolTip(t("tip.hu"))
@@ -568,15 +699,6 @@ class WelcomeDialog(QDialog):
         set_active_language(language)
         self.hu_btn.setChecked(language == "hu")
         self.en_btn.setChecked(language == "en")
-        style = (
-            "QPushButton { background: transparent; border: 1px solid transparent; "
-            "border-radius: 6px; padding: 1px; }"
-            "QPushButton:hover { background: rgba(128,128,128,35); }"
-            "QPushButton:checked { border: 2px solid #666666; "
-            "background: rgba(128,128,128,45); }"
-        )
-        self.hu_btn.setStyleSheet(style)
-        self.en_btn.setStyleSheet(style)
         self.retranslate()
 
     def open_help(self):
@@ -596,7 +718,7 @@ class PatchCenterDialog(QDialog):
     """
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Patch Center – tesztfázis")
+        self.setWindowTitle(t("patch.title"))
         self.resize(760, 520)
         self.setModal(True)
 
@@ -606,30 +728,28 @@ class PatchCenterDialog(QDialog):
 
         root = QVBoxLayout(self)
 
-        title = QLabel("Patch Center")
+        title = QLabel(t("patch.heading"))
         title.setStyleSheet("font-size: 15pt; font-weight: 700;")
         root.addWidget(title)
 
-        info = QLabel(
-            "Tesztfázisban a program csak a helyi „patches” mappából futtat patchokat. "
-            "A patch külön folyamatban indul, és siker esetén a program újraindítható. "
-            "Nyilvános verzióban ez a felület később online Upgrade központra cserélhető."
-        )
+        info = QLabel(t("patch.info"))
         info.setWordWrap(True)
         root.addWidget(info)
 
         path_row = QHBoxLayout()
-        path_row.addWidget(QLabel("Patch mappa:"))
+        path_row.addWidget(QLabel(t("patch.folder")))
         self.path_edit = QLineEdit(str(self.patch_dir))
         self.path_edit.setReadOnly(True)
         path_row.addWidget(self.path_edit, 1)
-        open_folder = QPushButton("Mappa megnyitása")
+        open_folder = QPushButton(t("patch.open_folder"))
         open_folder.clicked.connect(self.open_patch_folder)
         path_row.addWidget(open_folder)
         root.addLayout(path_row)
 
         self.list = QTableWidget(0, 3)
-        self.list.setHorizontalHeaderLabels(["Patch", "Méret", "Állapot"])
+        self.list.setHorizontalHeaderLabels([
+            t("patch.col_name"), t("patch.col_size"), t("patch.col_status"),
+        ])
         self.list.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows
         )
@@ -653,16 +773,16 @@ class PatchCenterDialog(QDialog):
         self.log = QTextEdit()
         self.log.setReadOnly(True)
         self.log.setFont(QFont("Consolas", 9))
-        self.log.setPlaceholderText("Patch napló...")
+        self.log.setPlaceholderText(t("patch.log_ph"))
         self.log.setMinimumHeight(130)
         root.addWidget(self.log)
 
         buttons = QHBoxLayout()
-        refresh = QPushButton("Patchok keresése")
+        refresh = QPushButton(t("patch.scan"))
         refresh.clicked.connect(self.scan_patches)
         buttons.addWidget(refresh)
 
-        self.run_btn = QPushButton("Kijelölt patch futtatása")
+        self.run_btn = QPushButton(t("patch.run"))
         self.run_btn.setEnabled(False)
         self.run_btn.setStyleSheet(
             "QPushButton { background: #6a1b9a; color: white; "
@@ -673,7 +793,7 @@ class PatchCenterDialog(QDialog):
         self.run_btn.clicked.connect(self.run_selected_patch)
         buttons.addWidget(self.run_btn)
 
-        close = QPushButton("Bezárás")
+        close = QPushButton(t("help.close"))
         close.clicked.connect(self.reject)
         buttons.addWidget(close)
         buttons.addStretch(1)
@@ -700,10 +820,7 @@ class PatchCenterDialog(QDialog):
         files = self._patch_files()
 
         if not files:
-            self.log.setPlainText(
-                "Nincs helyi patch.\n\n"
-                f"Helyezd a saját .py patchokat ide:\n{self.patch_dir}"
-            )
+            self.log.setPlainText(t("patch.none", path=self.patch_dir))
             self.update_buttons()
             return
 
@@ -713,16 +830,13 @@ class PatchCenterDialog(QDialog):
 
             name = QTableWidgetItem(path.name)
             size = QTableWidgetItem(f"{path.stat().st_size / 1024:.1f} KB")
-            status = QTableWidgetItem("Elérhető")
+            status = QTableWidgetItem(t("patch.available"))
 
             self.list.setItem(row, 0, name)
             self.list.setItem(row, 1, size)
             self.list.setItem(row, 2, status)
 
-        self.log.setPlainText(
-            f"{len(files)} helyi patch található.\n"
-            "A program csak a kiválasztott patchot futtatja."
-        )
+        self.log.setPlainText(t("patch.found", n=len(files)))
         self.update_buttons()
 
     def update_buttons(self):
@@ -749,16 +863,13 @@ class PatchCenterDialog(QDialog):
     def run_selected_patch(self):
         patch_path = self._selected_patch()
         if not patch_path:
-            QMessageBox.warning(self, "Patch", "Nincs kijelölt patch.")
+            QMessageBox.warning(self, t("patch.no_sel_title"), t("patch.no_sel"))
             return
 
         answer = QMessageBox.question(
             self,
-            "Patch futtatása",
-            f"Futtassam ezt a helyi patchot?\n\n"
-            f"{patch_path.name}\n\n"
-            "A patch módosíthatja a program fájljait. "
-            "A futtatás előtt a patchnek saját biztonsági mentést kell készítenie.",
+            t("patch.run_title"),
+            t("patch.run_body", name=patch_path.name),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
@@ -779,26 +890,22 @@ class PatchCenterDialog(QDialog):
                 timeout=300,
             )
         except subprocess.TimeoutExpired:
-            self.log.setPlainText(
-                f"A patch időtúllépés miatt leállt:\n{patch_path.name}"
-            )
+            self.log.setPlainText(t("patch.timeout", name=patch_path.name))
             self.run_btn.setEnabled(True)
             return
         except OSError as exc:
-            self.log.setPlainText(f"Nem sikerült elindítani a patchot:\n{exc}")
+            self.log.setPlainText(t("patch.start_fail", exc=exc))
             self.run_btn.setEnabled(True)
             return
 
         output = (completed.stdout or "") + ("\n" + completed.stderr if completed.stderr else "")
-        self.log.setPlainText(output.strip() or "A patch nem adott szöveges kimenetet.")
+        self.log.setPlainText(output.strip() or t("patch.no_output"))
 
         if completed.returncode != 0:
             QMessageBox.critical(
                 self,
-                "Patch hiba",
-                f"A patch sikertelenül futott le.\n\n"
-                f"Visszatérési kód: {completed.returncode}\n\n"
-                f"{output[-3000:]}"
+                t("patch.err_title"),
+                t("patch.err_body", code=completed.returncode, output=output[-3000:]),
             )
             self.scan_patches()
             return
@@ -807,9 +914,8 @@ class PatchCenterDialog(QDialog):
 
         answer = QMessageBox.question(
             self,
-            "Patch sikeres",
-            "A patch sikeresen lefutott.\n\n"
-            "Újraindítsam most a programot?",
+            t("patch.ok_title"),
+            t("patch.ok_body"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.Yes
         )
@@ -830,8 +936,8 @@ class PatchCenterDialog(QDialog):
         except OSError as exc:
             QMessageBox.critical(
                 self,
-                "Újraindítás",
-                f"A programot nem sikerült újraindítani:\n{exc}"
+                t("patch.restart_title"),
+                t("patch.restart_fail", exc=exc)
             )
             return
 
@@ -879,6 +985,7 @@ class MainWindow(QMainWindow):
         self.output_mode = "Másolás kimeneti mappába és átnevezés"
         self.output_dir = ""
         self.appearance = "Világos"
+        self.advanced_mode = False
 
         self._load_ui_preferences()
         set_active_language(self.language)
@@ -926,6 +1033,8 @@ class MainWindow(QMainWindow):
         )
         self.output_dir = config.get("output_dir", "")
         self.appearance = config.get("appearance", "Világos")
+        if "advanced_mode" in config:
+            self.advanced_mode = bool(config.get("advanced_mode"))
 
         modes = {"Automatikus / Vegyes", "Sorozat", "Film"}
         sorts = {"Név", "Évad → epizód", "Fájltípus", "Módosítás dátuma"}
@@ -956,89 +1065,92 @@ class MainWindow(QMainWindow):
 
     def build_ui(self):
         central = QWidget()
+        central.setObjectName("centralRoot")
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
-        root.setContentsMargins(8, 8, 8, 4)
+        root.setContentsMargins(10, 8, 10, 6)
+        root.setSpacing(8)
+
+        accent = QFrame()
+        accent.setObjectName("accentBar")
+
+        top_bar = QFrame()
+        top_bar.setObjectName("topBar")
+        top_bar_layout = QVBoxLayout(top_bar)
+        top_bar_layout.setContentsMargins(0, 0, 0, 0)
+        top_bar_layout.setSpacing(0)
+        top_bar_layout.addWidget(accent)
 
         top = QHBoxLayout()
-        top.setSpacing(4)
+        top.setContentsMargins(8, 6, 8, 6)
+        top.setSpacing(8)
+        top_bar_layout.addLayout(top)
 
-        self.add_btn = QPushButton("＋ Hozzáadás")
-        self.add_btn.setMinimumHeight(34)
-        self.add_btn.setStyleSheet(
-            "QPushButton { background: #1976d2; color: white; "
-            "font-weight: bold; padding: 6px 12px; border: 1px solid #125ca3; "
-            "border-radius: 6px; }"
-            "QPushButton:hover { background: #1565c0; }"
-        )
+        self.add_btn = QPushButton(t("btn.add"))
+        self.add_btn.setObjectName("btnPrimary")
+        self.add_btn.setMinimumHeight(36)
         self.add_menu = QMenu(self)
-        self.add_files_act = self.add_menu.addAction("Fájlok hozzáadása")
+        self.add_files_act = self.add_menu.addAction(t("menu.add_files"))
         self.add_files_act.triggered.connect(self.add_files)
-        self.add_folder_act = self.add_menu.addAction("Mappa hozzáadása")
+        self.add_folder_act = self.add_menu.addAction(t("menu.add_folder"))
         self.add_folder_act.triggered.connect(self.add_folder_native)
         self.add_btn.setMenu(self.add_menu)
         top.addWidget(self.add_btn)
 
-        self.clear_btn = QPushButton("Lista ürítése")
+        self.clear_btn = QPushButton(t("btn.clear_list"))
         self.clear_btn.clicked.connect(self.clear_list)
-        top.addWidget(self.clear_btn)
-        self.check_btn = QPushButton("Ellenőrzés")
+        self.check_btn = QPushButton(t("btn.check"))
         self.check_btn.clicked.connect(self.check)
-        top.addWidget(self.check_btn)
-        self.refresh_preview_btn = QPushButton("Előnézet frissítése")
+        self.refresh_preview_btn = QPushButton(t("btn.refresh_preview"))
         self.refresh_preview_btn.clicked.connect(lambda: self.refresh(reanalyze=True))
-        top.addWidget(self.refresh_preview_btn)
+
+        file_cluster = QFrame()
+        file_cluster.setObjectName("toolbarCluster")
+        file_cluster_layout = QHBoxLayout(file_cluster)
+        file_cluster_layout.setContentsMargins(4, 3, 4, 3)
+        file_cluster_layout.setSpacing(4)
+        file_cluster_layout.addWidget(self.clear_btn)
+        file_cluster_layout.addWidget(self.check_btn)
+        file_cluster_layout.addWidget(self.refresh_preview_btn)
+        top.addWidget(file_cluster)
 
         if dev_tools_enabled():
             # 0.6.0-TEST: ideiglenes Tesztlabor — csak DEV / teszt futtatás.
-            self.test_lab_btn = QPushButton("Tesztlabor")
-            self.test_lab_btn.setStyleSheet(
-                "QPushButton { background:#6a1b9a; color:white; "
-                "font-weight:bold; padding:6px 12px; border:1px solid #4a126d; "
-                "border-radius: 6px; }"
-                "QPushButton:hover { background:#4a126d; }"
-            )
-            self.test_lab_btn.setToolTip("Ideiglenes automata tesztlabor — 0.6.0-TEST")
+            self.test_lab_btn = QPushButton(t("btn.testlab"))
+            self.test_lab_btn.setObjectName("btnDev")
+            self.test_lab_btn.setToolTip(t("tip.testlab"))
             self.test_lab_btn.clicked.connect(self.open_test_lab)
             top.addWidget(self.test_lab_btn)
 
             # 0.6.1-TEST: helyi Patch Center — csak DEV / teszt futtatás.
-            self.patch_btn = QPushButton("Patch")
-            self.patch_btn.setStyleSheet(
-                "QPushButton { background:#455a64; color:white; "
-                "font-weight:bold; padding:6px 12px; border:1px solid #263238; "
-                "border-radius: 6px; }"
-                "QPushButton:hover { background:#37474f; }"
-            )
-            self.patch_btn.setToolTip(
-                "Tesztfázis: helyi patchok futtatása. "
-                "Később online Upgrade központ használhatja ugyanezt a gombot."
-            )
+            self.patch_btn = QPushButton(t("btn.patch"))
+            self.patch_btn.setObjectName("btnMuted")
+            self.patch_btn.setToolTip(t("tip.patch"))
             self.patch_btn.clicked.connect(self.open_patch_center)
             top.addWidget(self.patch_btn)
 
-        self.help_btn = QPushButton("Súgó ▾")
+        self.help_btn = QPushButton(t("btn.help"))
         help_menu = QMenu(self)
 
-        self.help_guide_act = help_menu.addAction("Súgó és használati útmutató")
+        self.help_guide_act = help_menu.addAction(t("menu.help"))
         self.help_guide_act.triggered.connect(self.show_help)
-        self.first_steps_act = help_menu.addAction("Első lépések")
+        self.first_steps_act = help_menu.addAction(t("menu.first_steps"))
         self.first_steps_act.triggered.connect(self.show_first_steps)
-        self.template_help_act = help_menu.addAction("Sablonváltozók")
+        self.template_help_act = help_menu.addAction(t("menu.template_vars"))
         self.template_help_act.triggered.connect(self.show_template_help)
 
         help_menu.addSeparator()
 
-        self.updates_act = help_menu.addAction("Frissítések keresése")
+        self.updates_act = help_menu.addAction(t("menu.updates"))
         self.updates_act.triggered.connect(self.check_updates)
-        self.bug_act = help_menu.addAction("Hibajelentés")
+        self.bug_act = help_menu.addAction(t("menu.bug"))
         self.bug_act.triggered.connect(self.report_bug)
-        self.donate_act = help_menu.addAction("Adományozás / Donate")
+        self.donate_act = help_menu.addAction(t("menu.donate"))
         self.donate_act.triggered.connect(self.donate)
 
         help_menu.addSeparator()
 
-        self.about_act = help_menu.addAction("Névjegy")
+        self.about_act = help_menu.addAction(t("menu.about"))
         self.about_act.triggered.connect(self.show_about)
 
         self.help_btn.setMenu(help_menu)
@@ -1050,61 +1162,62 @@ class MainWindow(QMainWindow):
             btn.setMinimumHeight(32)
 
         action_frame = QFrame()
+        action_frame.setObjectName("renameFrame")
         action_frame.setFrameShape(QFrame.Shape.StyledPanel)
-        action_frame.setStyleSheet(
-            "QFrame { background: #e8f5e9; border: 1px solid #d7e3d8; "
-            "border-radius: 6px; }"
-        )
         action_layout = QHBoxLayout(action_frame)
         action_layout.setContentsMargins(4, 4, 4, 4)
 
-        self.rename_btn = QPushButton("Átnevezés")
+        self.rename_btn = QPushButton(t("btn.rename"))
+        self.rename_btn.setObjectName("btnRename")
         self.rename_btn.setMinimumSize(150, 38)
         self.rename_btn.clicked.connect(self.rename)
         action_layout.addWidget(self.rename_btn)
         self.rename_frame = action_frame
+        self.rename_btn.installEventFilter(self)
+        self.rename_frame.installEventFilter(self)
         top.addWidget(action_frame)
 
-        # Jobb felső sarok: csak ikonok, a feliratok tooltipként jelennek meg.
+        # Jobb felső sarok: téma-kapcsoló és nyelv. A feliratok tooltipként jelennek meg.
         top.addStretch(1)
 
-        self.light_btn = QPushButton()
-        self.dark_btn = QPushButton()
-        self.light_btn.setIcon(make_theme_icon(False))
-        self.dark_btn.setIcon(make_theme_icon(True))
-        self.light_btn.setIconSize(QSize(26, 26))
-        self.dark_btn.setIconSize(QSize(26, 26))
-        self.light_btn.setToolTip("Világos mód")
-        self.dark_btn.setToolTip("Sötét mód")
-        for btn in (self.light_btn, self.dark_btn):
-            btn.setCheckable(True)
-            btn.setFixedSize(34, 30)
-            top.addWidget(btn)
-        self.light_btn.clicked.connect(lambda: self.set_appearance("Világos"))
-        self.dark_btn.clicked.connect(lambda: self.set_appearance("Sötét"))
+        self.theme_btn = QPushButton()
+        self.theme_btn.setObjectName("themeToggle")
+        self.theme_btn.setIconSize(QSize(28, 26))
+        self.theme_btn.setFixedSize(34, 30)
+        self.theme_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.theme_btn.clicked.connect(self._toggle_appearance)
+        top.addWidget(self.theme_btn)
         self.update_appearance_buttons()
-
-        top.addSpacing(8)
 
         self.hu_main_btn = QPushButton()
         self.en_main_btn = QPushButton()
         self.hu_main_btn.setIcon(make_flag_icon("hu"))
         self.en_main_btn.setIcon(make_flag_icon("en"))
-        self.hu_main_btn.setIconSize(QSize(28, 20))
-        self.en_main_btn.setIconSize(QSize(28, 20))
-        self.hu_main_btn.setToolTip("Magyar")
-        self.en_main_btn.setToolTip("English")
+        self.hu_main_btn.setToolTip(t("tip.hu"))
+        self.en_main_btn.setToolTip(t("tip.en"))
+        lang_cluster = QFrame()
+        lang_cluster.setObjectName("iconCluster")
+        lang_cluster.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        lang_cluster.setFixedHeight(30)
+        lang_layout = QHBoxLayout(lang_cluster)
+        lang_layout.setContentsMargins(2, 0, 2, 0)
+        lang_layout.setSpacing(2)
         for btn in (self.hu_main_btn, self.en_main_btn):
             btn.setCheckable(True)
-            btn.setFixedSize(34, 30)
-            top.addWidget(btn)
+            btn.setFixedSize(30, 28)
+            btn.setIconSize(QSize(22, 16))
+            lang_layout.addWidget(btn)
+        top.addWidget(lang_cluster)
+        top.setAlignment(self.theme_btn, Qt.AlignmentFlag.AlignVCenter)
+        top.setAlignment(lang_cluster, Qt.AlignmentFlag.AlignVCenter)
         self.hu_main_btn.clicked.connect(lambda: self.set_language("hu"))
         self.en_main_btn.clicked.connect(lambda: self.set_language("en"))
         self.update_language_buttons()
 
-        root.addLayout(top)
+        root.addWidget(top_bar)
 
         self.tabs = QTabWidget()
+        self.tabs.setTabBar(_StableTabBar())
         root.addWidget(self.tabs, 1)
 
         self.files_tab = QWidget()
@@ -1112,36 +1225,38 @@ class MainWindow(QMainWindow):
         self.preview_tab = QWidget()
         self.history_tab = QWidget()
 
-        self.tabs.addTab(self.files_tab, "Fájlok")
-        self.tabs.addTab(self.settings_tab, "Sablon és beállítások")
-        self.tabs.addTab(self.preview_tab, "Előnézet")
-        self.tabs.addTab(self.history_tab, "Előzmények")
+        self.tabs.addTab(self.files_tab, t("tab.files"))
+        self.tabs.addTab(self.settings_tab, t("tab.settings"))
+        self.tabs.addTab(self.preview_tab, t("tab.preview"))
+        self.tabs.addTab(self.history_tab, t("tab.history"))
 
         self.build_files()
         self.build_settings()
         self.build_preview()
         self.build_history()
-        self.set_appearance(self.appearance)
 
         footer = QFrame()
-        footer.setStyleSheet(
-            "QFrame { background: #f5f5f5; border-top: 1px solid #e0e0e0; }"
-        )
+        footer.setObjectName("footerBar")
         footer_layout = QHBoxLayout(footer)
-        footer_layout.setContentsMargins(8, 3, 8, 3)
+        footer_layout.setContentsMargins(10, 4, 10, 4)
         self.footer_name = QLabel(APP_NAME)
         footer_layout.addWidget(self.footer_name)
+        self.footer_badge = QLabel(t("footer.test_version"))
+        self.footer_badge.setObjectName("testBadge")
+        self.footer_badge.setVisible(show_test_version_mark())
+        footer_layout.addWidget(self.footer_badge)
         footer_layout.addStretch(1)
         self.footer_meta = QLabel(f"v{APP_VERSION}  •  {AUTHOR}")
+        self.footer_meta.setObjectName("mutedLabel")
         footer_layout.addWidget(self.footer_meta)
         footer_layout.addSpacing(18)
 
-        self.footer_bug_btn = QPushButton("Hibajelentés")
+        self.footer_bug_btn = QPushButton(t("btn.bug"))
         self.footer_bug_btn.setFlat(True)
         self.footer_bug_btn.clicked.connect(self.report_bug)
         footer_layout.addWidget(self.footer_bug_btn)
 
-        self.footer_donate_btn = QPushButton("Donate")
+        self.footer_donate_btn = QPushButton(t("btn.donate"))
         self.footer_donate_btn.setFlat(True)
         self.footer_donate_btn.clicked.connect(self.donate)
         footer_layout.addWidget(self.footer_donate_btn)
@@ -1150,7 +1265,8 @@ class MainWindow(QMainWindow):
 
         status_row = QHBoxLayout()
 
-        self.status_label = QLabel("0 fájl")
+        self.status_label = QLabel(t("status.zero"))
+        self.status_label.setObjectName("mutedLabel")
         self.status_label.setFrameShape(QFrame.Shape.NoFrame)
         status_row.addWidget(self.status_label, 1)
 
@@ -1169,22 +1285,21 @@ class MainWindow(QMainWindow):
         self.progress_file_label.setToolTip("")
         status_row.addWidget(self.progress_file_label)
 
-        self.cancel_btn = QPushButton("⛔  Feladat megszakítása")
+        self.cancel_btn = QPushButton(t("btn.cancel"))
+        self.cancel_btn.setObjectName("btnDanger")
         self.cancel_btn.setMinimumHeight(30)
-        self.cancel_btn.setStyleSheet(
-            "QPushButton { background: #c62828; color: white; border: 1px solid #8e1b1b; "
-            "border-radius: 6px; padding: 5px 10px; font-weight: 700; }"
-            "QPushButton:hover { background: #a51f1f; }"
-            "QPushButton:disabled { background: #ead0d0; color: #8a6a6a; border-color: #c9aaaa; }"
-        )
         self.cancel_btn.setEnabled(False)
         self.cancel_btn.clicked.connect(self.request_cancel)
         status_row.addWidget(self.cancel_btn)
 
         root.addLayout(status_row)
+        self.set_appearance(self.appearance)
+        self._stabilize_i18n_geometry()
 
     def build_files(self):
         layout = QVBoxLayout(self.files_tab)
+        layout.setContentsMargins(8, 10, 8, 8)
+        layout.setSpacing(8)
 
         self.guide_banner = QLabel()
         self.guide_banner.setWordWrap(True)
@@ -1195,19 +1310,22 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.guide_banner)
 
         tools = QHBoxLayout()
+        tools.setSpacing(6)
 
         self.filter_edit = QLineEdit()
-        self.filter_edit.setPlaceholderText("Keresés...")
+        self.filter_edit.setObjectName("searchField")
+        self.filter_edit.setPlaceholderText(t("files.search_ph"))
+        self.filter_edit.setMinimumWidth(180)
         self.filter_edit.textChanged.connect(
             lambda *_: self.refresh(reanalyze=False)
         )
         tools.addWidget(self.filter_edit, 1)
 
-        self.search_btn = QPushButton("Keresés")
+        self.search_btn = QPushButton(t("files.search"))
         self.search_btn.clicked.connect(lambda: self.refresh(reanalyze=False))
         tools.addWidget(self.search_btn)
 
-        self.sort_label = QLabel("Rendezés:")
+        self.sort_label = QLabel(t("files.sort"))
         tools.addWidget(self.sort_label)
 
         self.sort_combo = QComboBox()
@@ -1219,17 +1337,17 @@ class MainWindow(QMainWindow):
         )
         tools.addWidget(self.sort_combo)
 
-        self.select_all_files_btn = QPushButton("Minden kiválasztása")
+        self.select_all_files_btn = QPushButton(t("files.select_all"))
         self.select_all_files_btn.clicked.connect(lambda: self.set_all(True))
         tools.addWidget(self.select_all_files_btn)
 
-        self.deselect_files_btn = QPushButton("Kijelölés törlése")
+        self.deselect_files_btn = QPushButton(t("files.deselect"))
         self.deselect_files_btn.clicked.connect(lambda: self.set_all(False))
         tools.addWidget(self.deselect_files_btn)
 
-        self.remove_selected_btn = QPushButton("Kijelöltek törlése")
+        self.remove_selected_btn = QPushButton(t("files.remove_selected"))
         self.remove_selected_btn.clicked.connect(self.remove_selected)
-        self.remove_selected_btn.setToolTip("Csak a bepipált sorokat távolítja el a listából.")
+        self.remove_selected_btn.setToolTip(t("tip.remove_selected"))
         tools.addWidget(self.remove_selected_btn)
 
         self.select_review_btn = QPushButton(t("files.select_review"))
@@ -1237,6 +1355,7 @@ class MainWindow(QMainWindow):
         self.select_review_btn.clicked.connect(self.select_review_items)
         tools.addWidget(self.select_review_btn)
         self.show_review_only_btn = QPushButton(t("files.show_review_only"))
+        self.show_review_only_btn.setObjectName("showReviewOnly")
         self.show_review_only_btn.setCheckable(True)
         self.show_review_only_btn.setChecked(False)
         self.show_review_only_btn.setToolTip(t("tip.show_review_only"))
@@ -1252,42 +1371,32 @@ class MainWindow(QMainWindow):
         layout.addLayout(tools)
 
         self.detect_banner = QLabel()
+        self.detect_banner.setObjectName("detectBanner")
         self.detect_banner.setWordWrap(True)
         self.detect_banner.setTextFormat(Qt.TextFormat.RichText)
-        self.detect_banner.setStyleSheet(
-            "QLabel { padding: 8px 12px; border: 1px solid #c5d0c8; "
-            "border-radius: 6px; background: #f4f7f5; }"
-        )
         layout.addWidget(self.detect_banner)
 
         self.empty_panel = QWidget()
         empty_layout = QVBoxLayout(self.empty_panel)
         empty_layout.setContentsMargins(0, 8, 0, 8)
         self.empty_state = QLabel(t("files.empty"))
+        self.empty_state.setObjectName("emptyState")
         self.empty_state.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.empty_state.setWordWrap(True)
         self.empty_state.setMinimumHeight(88)
-        self.empty_state.setStyleSheet(
-            "QLabel { color: #555; padding: 20px; border: 1px dashed #bdbdbd; "
-            "border-radius: 8px; background: #fafafa; font-size: 11pt; }"
-        )
         empty_layout.addWidget(self.empty_state)
         self.empty_add_btn = QPushButton(t("btn.add_folder_cta"))
+        self.empty_add_btn.setObjectName("btnPrimary")
         self.empty_add_btn.setMinimumHeight(40)
-        self.empty_add_btn.setStyleSheet(
-            "QPushButton { background: #1976d2; color: white; font-weight: bold; "
-            "font-size: 11pt; padding: 8px 22px; border: 1px solid #125ca3; "
-            "border-radius: 6px; }"
-            "QPushButton:hover { background: #1565c0; }"
-        )
         self.empty_add_btn.clicked.connect(self.add_folder_native)
         empty_layout.addWidget(self.empty_add_btn, alignment=Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.empty_panel)
 
-        self.output_box = QGroupBox("Kimenet")
+        self.output_box = QGroupBox(t("output.box"))
         output_layout = QGridLayout(self.output_box)
+        self.output_grid = output_layout
 
-        self.output_action_label = QLabel("Művelet:")
+        self.output_action_label = QLabel(t("output.action"))
         output_layout.addWidget(self.output_action_label, 0, 0)
 
         self.output_mode_combo = QComboBox()
@@ -1298,17 +1407,15 @@ class MainWindow(QMainWindow):
         self.output_mode_combo.currentIndexChanged.connect(self.on_output_mode_changed)
         output_layout.addWidget(self.output_mode_combo, 0, 1, 1, 2)
 
-        self.output_folder_label = QLabel("Kimeneti mappa:")
+        self.output_folder_label = QLabel(t("output.folder"))
         output_layout.addWidget(self.output_folder_label, 1, 0)
 
         self.output_edit = QLineEdit(self.output_dir)
-        self.output_edit.setPlaceholderText(
-            "Válassz egy külön kimeneti mappát..."
-        )
+        self.output_edit.setPlaceholderText(t("output.folder_ph"))
         self.output_edit.textChanged.connect(self.on_output_dir_changed)
         output_layout.addWidget(self.output_edit, 1, 1)
 
-        self.output_browse_btn = QPushButton("Mappa kiválasztása…")
+        self.output_browse_btn = QPushButton(t("output.browse"))
         self.output_browse_btn.clicked.connect(self.choose_output_dir)
         output_layout.addWidget(self.output_browse_btn, 1, 2)
 
@@ -1340,9 +1447,7 @@ class MainWindow(QMainWindow):
         self.table.horizontalHeader().sectionClicked.connect(self._header_section_clicked)
 
         header = self.table.horizontalHeader()
-        header.setToolTip(
-            "Kijelölés: kattintásra mindent kijelöl / újabb kattintásra mindent töröl"
-        )
+        header.setToolTip(t("tip.table_check"))
         header.setSectionResizeMode(COL_CHECK, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(COL_ORIG, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(COL_NEW, QHeaderView.ResizeMode.Stretch)
@@ -1353,12 +1458,9 @@ class MainWindow(QMainWindow):
         self.table.setColumnWidth(COL_ORIG, 280)
         self.table.setColumnWidth(COL_NEW, 240)
         self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(32)
         self.table.setShowGrid(False)
-        self.table.setStyleSheet(
-            "QHeaderView::section { padding: 6px 8px; border: none; "
-            "border-bottom: 1px solid #d0d0d0; font-weight: 600; }"
-            "QTableWidget::item { padding: 4px; }"
-        )
+        self.table.setAlternatingRowColors(False)
 
         layout.addWidget(self.table)
         self.table.setVisible(False)
@@ -1369,11 +1471,26 @@ class MainWindow(QMainWindow):
 
     def build_settings(self):
         layout = QVBoxLayout(self.settings_tab)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
+
+        self.settings_intro = QLabel()
+        self.settings_intro.setObjectName("settingsIntro")
+        self.settings_intro.setWordWrap(True)
+        layout.addWidget(self.settings_intro)
+
+        self.naming_heading = QLabel()
+        self.naming_heading.setObjectName("sectionHeading")
+        layout.addWidget(self.naming_heading)
 
         left = QWidget()
         grid = QGridLayout(left)
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(8)
+        grid.setContentsMargins(0, 0, 0, 0)
+        self.settings_grid = grid
 
-        self.mode_label = QLabel("Mód:")
+        self.mode_label = QLabel(t("mode.label"))
         grid.addWidget(self.mode_label, 0, 0)
 
         self.mode_combo = QComboBox()
@@ -1383,31 +1500,29 @@ class MainWindow(QMainWindow):
         self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
         grid.addWidget(self.mode_combo, 0, 1)
 
-        self.name_label = QLabel("Sorozat neve:")
+        self.name_label = QLabel(t("name.series"))
         grid.addWidget(self.name_label, 1, 0)
 
         self.title_edit = QLineEdit()
         self.title_edit.textChanged.connect(self._title_changed)
         grid.addWidget(self.title_edit, 1, 1)
 
-        self.detected_box = QGroupBox("Felismerés")
+        self.detected_box = QGroupBox(t("detect.box"))
         detected_layout = QVBoxLayout(self.detected_box)
-        self.detected_series_label = QLabel("Még nincs elemzés")
+        self.detected_series_label = QLabel(t("detect.none"))
+        self.detected_series_label.setObjectName("mutedLabel")
         self.detected_series_label.setWordWrap(True)
-        self.detected_series_label.setStyleSheet(
-            "QLabel { padding: 4px; color: #333; }"
-        )
         detected_layout.addWidget(self.detected_series_label)
         grid.addWidget(self.detected_box, 1, 2, 2, 1)
 
-        self.template_label = QLabel("Kívánt név sablon:")
+        self.template_label = QLabel(t("template.label"))
         grid.addWidget(self.template_label, 2, 0)
 
         self.template_edit = QLineEdit(self.template_value)
         self.template_edit.textChanged.connect(self._template_changed)
         grid.addWidget(self.template_edit, 2, 1)
 
-        self.base_vars_label = QLabel("Alap változók:")
+        self.base_vars_label = QLabel(t("vars.base"))
         grid.addWidget(self.base_vars_label, 3, 0)
 
         var_frame = QWidget()
@@ -1423,13 +1538,11 @@ class MainWindow(QMainWindow):
 
         grid.addWidget(var_frame, 3, 1)
 
-        self.default_template_label = QLabel(
-            "Alapértelmezett sorozatsablon: {CIM}.{SZEZON}{EPIZOD}"
-        )
-        self.default_template_label.setStyleSheet("color: #444;")
+        self.default_template_label = QLabel(t("tpl.series"))
+        self.default_template_label.setObjectName("mutedLabel")
         grid.addWidget(self.default_template_label, 4, 1)
 
-        self.subtitle_pref_label = QLabel("Preferált felirat nyelve:")
+        self.subtitle_pref_label = QLabel(t("pref.label"))
         grid.addWidget(self.subtitle_pref_label, 5, 0)
         self.subtitle_pref_combo = QComboBox()
         fill_combo(self.subtitle_pref_combo, SUBTITLE_PREF_CHOICES, SUBTITLE_PREF_KEYS)
@@ -1437,14 +1550,17 @@ class MainWindow(QMainWindow):
         self.subtitle_pref_combo.currentIndexChanged.connect(self._on_subtitle_pref_changed)
         grid.addWidget(self.subtitle_pref_combo, 5, 1)
 
-        self.advanced_box = QGroupBox("Haladó beállítások")
+        self.advanced_box = QGroupBox(t("adv.mode"))
+        self.advanced_box.setCheckable(True)
+        self.advanced_box.setFlat(False)
+        self.advanced_box.setToolTip(t("adv.mode_tip"))
         adv_layout = QVBoxLayout(self.advanced_box)
 
-        self.normalize_cb = QCheckBox("Fájlnév normalizálása")
-        self.lang_norm_cb = QCheckBox("Feliratnevek normalizálása")
-        self.subdirs_cb = QCheckBox("Almappák bevonása")
-        self.conflicts_cb = QCheckBox("Névütközések előzetes ellenőrzése")
-        self.preserve_cb = QCheckBox("Kijelölések megőrzése")
+        self.normalize_cb = QCheckBox(t("adv.normalize"))
+        self.lang_norm_cb = QCheckBox(t("adv.lang_norm"))
+        self.subdirs_cb = QCheckBox(t("adv.subdirs"))
+        self.conflicts_cb = QCheckBox(t("adv.conflicts"))
+        self.preserve_cb = QCheckBox(t("adv.preserve"))
 
         self.normalize_cb.setChecked(bool(self.normalize_value))
         self.subdirs_cb.setChecked(bool(self.include_subdirs_value))
@@ -1457,21 +1573,27 @@ class MainWindow(QMainWindow):
         ]:
             adv_layout.addWidget(cb)
 
-        self.adv_vars_label = QLabel("Haladó sablonváltozók: {NYELV}, {KITERJ}, {EP}, {EXT}")
+        self.adv_vars_label = QLabel(t("adv.vars"))
+        self.adv_vars_label.setObjectName("mutedLabel")
         adv_layout.addWidget(self.adv_vars_label)
         grid.addWidget(self.advanced_box, 6, 0, 1, 2)
+        self.advanced_box.blockSignals(True)
+        self.advanced_box.setChecked(bool(self.advanced_mode))
+        self.advanced_box.blockSignals(False)
+        self.advanced_box.toggled.connect(self._on_advanced_mode_toggled)
+        self._apply_advanced_visibility(bool(self.advanced_mode))
 
         button_row = QHBoxLayout()
-        self.save_settings_btn = QPushButton("Beállítások mentése")
+        self.save_settings_btn = QPushButton(t("btn.save_settings"))
         self.save_settings_btn.clicked.connect(self.save_settings)
         button_row.addWidget(self.save_settings_btn)
 
-        self.refresh_list_btn = QPushButton("Lista frissítése")
-        self.refresh_list_btn.setToolTip("Újraelemzi a listát és újragenerálja a tervezett neveket.")
+        self.refresh_list_btn = QPushButton(t("btn.refresh_list"))
+        self.refresh_list_btn.setToolTip(t("tip.refresh_list"))
         self.refresh_list_btn.clicked.connect(self.refresh)
         button_row.addWidget(self.refresh_list_btn)
 
-        self.reset_settings_btn = QPushButton("Beállítások visszaállítása")
+        self.reset_settings_btn = QPushButton(t("btn.reset_settings"))
         self.reset_settings_btn.clicked.connect(self.reset_settings)
         button_row.addWidget(self.reset_settings_btn)
         button_row.addStretch(1)
@@ -1480,6 +1602,38 @@ class MainWindow(QMainWindow):
         layout.addWidget(left)
         layout.addStretch(1)
 
+    def _advanced_inner_widgets(self):
+        return (
+            self.normalize_cb, self.lang_norm_cb, self.subdirs_cb,
+            self.conflicts_cb, self.preserve_cb, self.adv_vars_label,
+        )
+
+    def _apply_advanced_visibility(self, on):
+        on = bool(on)
+        for widget in self._advanced_inner_widgets():
+            widget.setVisible(on)
+        layout = self.advanced_box.layout()
+        if layout is not None:
+            if on:
+                layout.setContentsMargins(9, 9, 9, 9)
+                layout.setSpacing(6)
+            else:
+                layout.setContentsMargins(0, 0, 0, 0)
+                layout.setSpacing(0)
+        if on:
+            self.advanced_box.setMaximumHeight(16777215)
+        else:
+            title_h = self.advanced_box.fontMetrics().height() + 18
+            self.advanced_box.setMaximumHeight(title_h)
+        self.advanced_box.updateGeometry()
+        if hasattr(self, "settings_tab"):
+            self.settings_tab.updateGeometry()
+
+    def _on_advanced_mode_toggled(self, on):
+        self.advanced_mode = bool(on)
+        self._apply_advanced_visibility(self.advanced_mode)
+        self.save_settings(silent=True)
+
     def build_preview(self):
         layout = QVBoxLayout(self.preview_tab)
         self.preview_text = QTextEdit()
@@ -1487,9 +1641,9 @@ class MainWindow(QMainWindow):
         self.preview_text.setFont(QFont("Consolas", 10))
         layout.addWidget(self.preview_text)
         self.batch_select_row = QHBoxLayout()
-        self.select_all_btn = QPushButton("Összes kijelölése")
-        self.select_none_btn = QPushButton("Kijelölés törlése")
-        self.select_missing_btn = QPushButton("Csak a hiányzókat")
+        self.select_all_btn = QPushButton(t("preview.select_all"))
+        self.select_none_btn = QPushButton(t("preview.select_none"))
+        self.select_missing_btn = QPushButton(t("preview.select_missing"))
         self.select_all_btn.clicked.connect(self.select_all_items)
         self.select_none_btn.clicked.connect(self.select_none_items)
         self.select_missing_btn.clicked.connect(self.select_missing_items)
@@ -1517,7 +1671,8 @@ class MainWindow(QMainWindow):
 
         self.hist = QTableWidget(0, 7)
         self.hist.setHorizontalHeaderLabels([
-            "✓", "#", "Időpont", "Művelet", "Sorozat / film", "Fájlok", "Hely"
+            t("hist.check"), t("hist.num"), t("hist.time"), t("hist.op"),
+            t("hist.title"), t("hist.files"), t("hist.place"),
         ])
         self.hist.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.hist.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -1532,31 +1687,28 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.hist, 1)
 
         buttons = QHBoxLayout()
-        self.hist_select_all_btn = QPushButton("Minden kijelölése")
+        self.hist_select_all_btn = QPushButton(t("hist.select_all"))
         self.hist_select_all_btn.clicked.connect(self.history_select_all)
         buttons.addWidget(self.hist_select_all_btn)
-        self.hist_deselect_btn = QPushButton("Kijelölés törlése")
+        self.hist_deselect_btn = QPushButton(t("hist.deselect"))
         self.hist_deselect_btn.clicked.connect(self.history_clear_selection)
         buttons.addWidget(self.hist_deselect_btn)
-        self.hist_delete_btn = QPushButton("Kijelöltek törlése")
+        self.hist_delete_btn = QPushButton(t("hist.delete"))
         self.hist_delete_btn.clicked.connect(self.delete_selected_history)
         buttons.addWidget(self.hist_delete_btn)
         buttons.addSpacing(12)
-        self.hist_undo_btn = QPushButton("Kiválasztott művelet visszaállítása")
-        self.hist_undo_btn.setStyleSheet(
-            "QPushButton { background: #c62828; color: white; font-weight: bold; }"
-            "QPushButton:hover { background: #a51f1f; }"
-        )
+        self.hist_undo_btn = QPushButton(t("hist.undo"))
+        self.hist_undo_btn.setObjectName("btnDanger")
         self.hist_undo_btn.clicked.connect(self.undo_selected)
         buttons.addWidget(self.hist_undo_btn)
-        self.hist_failed_btn = QPushButton("Kimaradt fájlok")
+        self.hist_failed_btn = QPushButton(t("hist.failed"))
         self.hist_failed_btn.clicked.connect(self.show_selected_history_failures)
         buttons.addWidget(self.hist_failed_btn)
-        self.hist_export_btn = QPushButton("Előzmények exportálása")
+        self.hist_export_btn = QPushButton(t("hist.export"))
         self.hist_export_btn.clicked.connect(self.export_history)
         buttons.addWidget(self.hist_export_btn)
         buttons.addStretch(1)
-        self.hist_clear_btn = QPushButton("Összes előzmény törlése")
+        self.hist_clear_btn = QPushButton(t("hist.clear"))
         self.hist_clear_btn.clicked.connect(self.clear_history)
         buttons.addWidget(self.hist_clear_btn)
         layout.addLayout(buttons)
@@ -1623,23 +1775,21 @@ class MainWindow(QMainWindow):
     def add_folders(self):
         """Több forráskönyvtár kiválasztása saját, többes kijelölésű ablakkal."""
         dialog = QDialog(self)
-        dialog.setWindowTitle("Könyvtárak hozzáadása")
+        dialog.setWindowTitle(t("dlg.add_folders_title"))
         dialog.resize(760, 560)
 
         root = QVBoxLayout(dialog)
-        info = QLabel(
-            "Jelölj ki egy vagy több könyvtárat. Ctrl/Shift segítségével több könyvtár is kiválasztható."
-        )
+        info = QLabel(t("dlg.add_folders_info"))
         info.setWordWrap(True)
         root.addWidget(info)
 
         path_row = QHBoxLayout()
-        path_row.addWidget(QLabel("Hely:"))
+        path_row.addWidget(QLabel(t("dlg.location")))
         start = self._last_folder if Path(self._last_folder).is_dir() else str(Path.home())
         path_edit = QLineEdit(start)
-        path_edit.setPlaceholderText("Mappa útvonala – beilleszthető vagy begépelhető")
+        path_edit.setPlaceholderText(t("dlg.path_ph"))
         path_row.addWidget(path_edit, 1)
-        go_btn = QPushButton("Megnyitás")
+        go_btn = QPushButton(t("dlg.open"))
         path_row.addWidget(go_btn)
         root.addLayout(path_row)
 
@@ -1664,12 +1814,12 @@ class MainWindow(QMainWindow):
             tree.hideColumn(col)
         root.addWidget(tree, 1)
 
-        selected_label = QLabel("Kijelölve: 0 könyvtár")
+        selected_label = QLabel(t("dlg.selected_folders", n=0))
         root.addWidget(selected_label)
 
         def update_count():
             count = len(tree.selectionModel().selectedRows(0))
-            selected_label.setText(f"Kijelölve: {count} könyvtár")
+            selected_label.setText(t("dlg.selected_folders", n=count))
 
         tree.selectionModel().selectionChanged.connect(lambda *_: update_count())
 
@@ -1678,7 +1828,10 @@ class MainWindow(QMainWindow):
             if path.is_dir():
                 tree.setRootIndex(model.index(str(path)))
             else:
-                QMessageBox.warning(dialog, "Érvénytelen mappa", f"A mappa nem található:\n{path}")
+                QMessageBox.warning(
+                    dialog, t("dlg.invalid_folder_title"),
+                    t("dlg.invalid_folder", path=path),
+                )
 
         go_btn.clicked.connect(navigate)
         path_edit.returnPressed.connect(navigate)
@@ -1687,8 +1840,8 @@ class MainWindow(QMainWindow):
             QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok,
             parent=dialog
         )
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Hozzáadás")
-        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("Mégsem")
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText(t("dlg.add"))
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText(t("dlg.cancel"))
         root.addWidget(buttons)
 
         def accept_selection():
@@ -1702,7 +1855,9 @@ class MainWindow(QMainWindow):
                     seen.add(key)
                     folders.append(folder)
             if not folders:
-                QMessageBox.information(dialog, "Nincs kijelölve", "Jelölj ki legalább egy könyvtárat.")
+                QMessageBox.information(
+                    dialog, t("dlg.none_selected_title"), t("dlg.none_selected_folders")
+                )
                 return
             dialog.selected_folders = folders
             dialog.accept()
@@ -1730,8 +1885,8 @@ class MainWindow(QMainWindow):
         if not all_paths:
             QMessageBox.information(
                 self,
-                "Nincs hozzáadható fájl",
-                "A kiválasztott könyvtárakban nem találtam támogatott videó- vagy feliratfájlt."
+                t("msg.no_files_title"),
+                t("msg.no_files_folders"),
             )
             return
 
@@ -1750,25 +1905,22 @@ class MainWindow(QMainWindow):
     def _choose_source_folder(self):
         """Útvonal beillesztése + natív tallózás, a Windows mély fát nem cseréli le."""
         dialog = QDialog(self)
-        dialog.setWindowTitle("Mappa hozzáadása")
+        dialog.setWindowTitle(t("dlg.add_folder_title"))
         dialog.resize(560, 140)
         layout = QVBoxLayout(dialog)
-        layout.addWidget(QLabel(
-            "Illeszd be a mappa útvonalát, vagy tallózz. "
-            "Az almappák a beállítások „Almappák bevonása” kapcsolóját követik."
-        ))
+        layout.addWidget(QLabel(t("dlg.add_folder_info")))
         row = QHBoxLayout()
         start = self._last_folder if Path(self._last_folder).is_dir() else str(Path.home())
         path_edit = QLineEdit(start)
-        path_edit.setPlaceholderText(r"C:\Sorozatok\Show")
+        path_edit.setPlaceholderText(t("dlg.path_example"))
         row.addWidget(path_edit, 1)
-        browse = QPushButton("Tallózás…")
+        browse = QPushButton(t("dlg.browse"))
         row.addWidget(browse)
         layout.addLayout(row)
 
         def browse_native():
             chosen = QFileDialog.getExistingDirectory(
-                dialog, "Mappa kiválasztása", path_edit.text().strip() or start
+                dialog, t("dlg.pick_folder"), path_edit.text().strip() or start
             )
             if chosen:
                 path_edit.setText(chosen)
@@ -1778,8 +1930,8 @@ class MainWindow(QMainWindow):
             QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok,
             parent=dialog
         )
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Hozzáadás")
-        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("Mégsem")
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText(t("dlg.add"))
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText(t("dlg.cancel"))
         layout.addWidget(buttons)
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
@@ -1791,7 +1943,8 @@ class MainWindow(QMainWindow):
         folder = Path(raw)
         if not folder.is_dir():
             QMessageBox.warning(
-                self, "Érvénytelen mappa", f"A mappa nem található:\n{folder}"
+                self, t("dlg.invalid_folder_title"),
+                t("dlg.invalid_folder", path=folder),
             )
             return None
         self._last_folder = str(folder)
@@ -1831,10 +1984,8 @@ class MainWindow(QMainWindow):
         if not paths and not recursive:
             answer = QMessageBox.question(
                 self,
-                "Nincs közvetlenül feldolgozható fájl",
-                "A kiválasztott mappában nem találtam támogatott videó- vagy "
-                "feliratfájlt közvetlenül.\n\n"
-                "Megnézzem az almappákat is?",
+                t("msg.no_direct_title"),
+                t("msg.no_direct"),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.Yes,
             )
@@ -1844,11 +1995,8 @@ class MainWindow(QMainWindow):
         if not paths:
             QMessageBox.information(
                 self,
-                "Nincs hozzáadható fájl",
-                f"A kiválasztott mappában nem találtam támogatott fájlt:\n\n"
-                f"{root}\n\n"
-                "Támogatott videók: MKV, MP4, AVI, M4V, MOV, WMV, WEBM, TS, M2TS\n"
-                "Támogatott feliratok: SRT, ASS, SSA, VTT, SUB"
+                t("msg.no_files_title"),
+                t("msg.no_files_folder", path=root),
             )
             return
 
@@ -1859,9 +2007,9 @@ class MainWindow(QMainWindow):
         extensions = " ".join("*" + x for x in sorted(ALL_EXTS))
         paths, _ = QFileDialog.getOpenFileNames(
             self,
-            "Videók és feliratok kiválasztása",
+            t("dlg.pick_files"),
             start,
-            f"Támogatott fájlok ({extensions});;Minden fájl (*.*)"
+            f"{t('dlg.files_filter', exts=extensions)};;{t('dlg.all_files')}"
         )
         if paths:
             self._last_folder = str(Path(paths[0]).parent)
@@ -1913,16 +2061,15 @@ class MainWindow(QMainWindow):
         if missing and not collected:
             QMessageBox.warning(
                 self,
-                "Nem elérhető útvonal",
-                "A megadott fájl vagy mappa nem található:\n"
-                + "\n".join(str(x) for x in missing[:8])
+                t("msg.path_missing_title"),
+                t("msg.path_missing", paths="\n".join(str(x) for x in missing[:8])),
             )
             return
         if not collected:
             QMessageBox.information(
                 self,
-                "Nincs hozzáadható fájl",
-                "A húzott mappákban nem találtam támogatott videó- vagy feliratfájlt."
+                t("msg.no_files_title"),
+                t("msg.no_files_drop"),
             )
             return
         self.add_paths(collected)
@@ -1999,11 +2146,15 @@ class MainWindow(QMainWindow):
             self.save_settings(silent=True)
         self.update_action_state()
 
+    def _theme(self):
+        return theme_tokens(getattr(self, "appearance", "Világos") == "Sötét")
+
     def _style_output_hint(self):
         """Kimeneti súgó stílusa. A helyben-figyelmeztetés szövege változatlan,
         vizuálisan a vezető sáv alatt marad."""
         if not hasattr(self, "output_hint"):
             return
+        tok = self._theme()
         copy_mode = self.output_mode == "Másolás kimeneti mappába és átnevezés"
         ready = (
             hasattr(self, "guide_banner")
@@ -2012,22 +2163,22 @@ class MainWindow(QMainWindow):
         )
         if copy_mode:
             self.output_hint.setStyleSheet(
-                "QLabel { border: 1px solid #81c784; border-radius: 6px; "
-                "padding: 7px 10px; background: #f1f8f2; color: #2e5a34; "
-                "font-weight: 400; }"
+                f"QLabel {{ border: 1px solid {tok['success']}; border-radius: 8px; "
+                f"padding: 8px 11px; background: {tok['success_soft']}; "
+                f"color: {tok['success']}; font-weight: 400; }}"
             )
             return
         if ready:
             self.output_hint.setStyleSheet(
-                "QLabel { border: 1px solid #d7b6b6; border-radius: 6px; "
-                "padding: 6px 10px; background: #fbf6f6; color: #6d4e4e; "
-                "font-weight: 400; font-size: 9.5pt; }"
+                f"QLabel {{ border: 1px solid {tok['danger']}; border-radius: 8px; "
+                f"padding: 6px 10px; background: {tok['danger_soft']}; "
+                f"color: {tok['text_secondary']}; font-weight: 400; font-size: 9.5pt; }}"
             )
             return
         self.output_hint.setStyleSheet(
-            "QLabel { border: 1px solid #c9a4a4; border-radius: 6px; "
-            "padding: 6px 10px; background: #f8f1f1; color: #7a4a4a; "
-            "font-weight: 400; font-size: 9.5pt; }"
+            f"QLabel {{ border: 1px solid {tok['danger']}; border-radius: 8px; "
+            f"padding: 6px 10px; background: {tok['danger_soft']}; "
+            f"color: {tok['danger']}; font-weight: 400; font-size: 9.5pt; }}"
         )
 
     def _reset_copy_states_for_destination(self):
@@ -2065,22 +2216,19 @@ class MainWindow(QMainWindow):
             return ""
 
         if not self.output_dir:
-            return "Nincs kiválasztva kimeneti mappa."
+            return t("msg.output_empty")
 
         try:
             destination = Path(self.output_dir).resolve()
         except OSError:
-            return "A kimeneti mappa nem érvényes."
+            return t("msg.output_invalid")
 
         if destination.exists() and not destination.is_dir():
-            return "A kimeneti útvonal nem mappa."
+            return t("msg.output_not_dir")
 
         source_parents = {self._source_path(i).resolve().parent for i in selected}
         if destination in source_parents:
-            return (
-                "A kimeneti mappa nem lehet ugyanaz a mappa, amelyben "
-                "az eredeti fájlok találhatók."
-            )
+            return t("msg.output_same")
 
         return ""
 
@@ -2146,7 +2294,7 @@ class MainWindow(QMainWindow):
         """
         if (item.status or "") in {"OK", "Kész"}:
             return ""
-        return (item.note or "").strip()
+        return note_text(item.note)
 
     def _review_kind(self, item):
         """UI-only grouping of existing item.status values. Does not change them."""
@@ -2226,26 +2374,27 @@ class MainWindow(QMainWindow):
         primary = state == "ready" and not empty
 
         self.guide_banner.setText(self._guide_banner_html(state))
+        tok = self._theme()
         colors = {
-            "empty": ("#e3f2fd", "#90caf9", "#1565c0"),
-            "added": ("#e8f5e9", "#a5d6a7", "#2e7d32"),
-            "preview": ("#e8f5e9", "#a5d6a7", "#2e7d32"),
-            "ready": ("#a5d6a7", "#2e7d32", "#1b5e20"),
-            "review": ("#fff8e1", "#ffcc80", "#e65100"),
-            "busy": ("#eceff1", "#b0bec5", "#37474f"),
-            "done": ("#e8f5e9", "#81c784", "#1b5e20"),
+            "empty": (tok["accent_soft"], tok["accent"], tok["accent"]),
+            "added": (tok["success_soft"], tok["success"], tok["success"]),
+            "preview": (tok["success_soft"], tok["success"], tok["success"]),
+            "ready": (tok["success_soft"], tok["success_fill"], tok["success"]),
+            "review": (tok["warning_soft"], tok["warning"], tok["warning"]),
+            "busy": (tok["surface_alt"], tok["border_strong"], tok["text_secondary"]),
+            "done": (tok["success_soft"], tok["success"], tok["success"]),
         }
         bg, border, fg = colors.get(state, colors["empty"])
         if state == "ready":
             self.guide_banner.setStyleSheet(
                 f"QLabel {{ padding: 12px 14px; border: 2px solid {border}; "
-                f"border-radius: 6px; background: {bg}; color: {fg}; "
-                f"font-size: 12pt; font-weight: 700; }}"
+                f"border-radius: 8px; background: {bg}; color: {fg}; "
+                f"font-size: 12pt; font-weight: 600; }}"
             )
         else:
             self.guide_banner.setStyleSheet(
                 f"QLabel {{ padding: 10px 12px; border: 1px solid {border}; "
-                f"border-radius: 6px; background: {bg}; color: {fg}; "
+                f"border-radius: 8px; background: {bg}; color: {fg}; "
                 f"font-size: 11pt; font-weight: 600; }}"
             )
 
@@ -2269,6 +2418,11 @@ class MainWindow(QMainWindow):
             self.detect_banner.setVisible(not empty)
             if not empty:
                 self.detect_banner.setText(self._detect_summary_html())
+                _set_qss_state(
+                    self.detect_banner,
+                    "ok",
+                    "true" if self._detect_all_pairs_ok() else "false",
+                )
         if hasattr(self, "output_box"):
             self.output_box.setVisible(not empty)
 
@@ -2290,30 +2444,67 @@ class MainWindow(QMainWindow):
         can_rename = (not empty) and (not busy) and self._has_processable_ok() and copy_ok
         if hasattr(self, "rename_btn"):
             self.rename_btn.setEnabled(can_rename)
-            if can_rename and primary:
-                self.rename_btn.setStyleSheet(
-                    "QPushButton { background: #2e7d32; color: white; "
-                    "font-size: 11pt; font-weight: bold; padding: 8px 18px; "
-                    "border-radius: 6px; }"
-                    "QPushButton:hover { background: #256628; }"
-                )
-                if hasattr(self, "rename_frame"):
-                    self.rename_frame.setStyleSheet(
-                        "QFrame { background: #e8f5e9; border: 1px solid #81c784; "
-                        "border-radius: 6px; }"
-                    )
+            ready = bool(can_rename and primary)
+            _set_qss_state(self.rename_btn, "ready", "true" if ready else "false")
+            self.rename_btn.setStyleSheet(rename_button_stylesheet(self._theme(), ready))
+            if hasattr(self, "rename_frame"):
+                _set_qss_state(self.rename_frame, "ready", "true" if ready else "false")
+            self._apply_rename_next_step_tooltip(
+                can_rename=can_rename, empty=empty, busy=busy, copy_ok=copy_ok
+            )
+
+    def _apply_rename_next_step_tooltip(
+        self, can_rename=None, empty=None, busy=None, copy_ok=None
+    ):
+        """Inaktív Átnevezés: a következő lépést mondja, nem a belső logikát."""
+        if not hasattr(self, "rename_btn"):
+            return
+        if empty is None:
+            empty = not self.items
+        if busy is None:
+            busy = self._is_busy()
+        if copy_ok is None:
+            copy_ok = self._rename_output_ok()
+        if can_rename is None:
+            can_rename = (
+                (not empty) and (not busy)
+                and self._has_processable_ok() and copy_ok
+            )
+        if can_rename:
+            tip = t("tip.rename_ready")
+        elif empty:
+            tip = t("tip.rename_empty")
+        elif busy:
+            tip = t("tip.rename_busy")
+        elif not copy_ok:
+            tip = t("tip.rename_output")
+        elif self._all_processed():
+            tip = t("tip.rename_done")
+        elif not self._has_processable_ok():
+            state = self._guided_state()
+            if state == "added":
+                tip = t("tip.rename_added")
+            elif state == "review":
+                tip = t("tip.rename_review")
             else:
-                self.rename_btn.setStyleSheet(
-                    "QPushButton { background: #ececec; color: #757575; "
-                    "font-size: 11pt; font-weight: bold; padding: 8px 18px; "
-                    "border: 1px solid #c8c8c8; border-radius: 6px; }"
-                    "QPushButton:disabled { background: #f5f5f5; color: #9e9e9e; }"
-                )
-                if hasattr(self, "rename_frame"):
-                    self.rename_frame.setStyleSheet(
-                        "QFrame { background: #f3f3f3; border: 1px solid #d0d0d0; "
-                        "border-radius: 6px; }"
-                    )
+                tip = t("tip.rename_select")
+        else:
+            tip = t("tip.rename_output")
+        self.rename_btn.setToolTip(tip)
+        if hasattr(self, "rename_frame"):
+            self.rename_frame.setToolTip(tip)
+
+    def eventFilter(self, obj, event):
+        # Disabled QPushButton nem mutat tooltipet; a keret/gomb hoverét itt pótoljuk.
+        if event.type() == QEvent.Type.ToolTip and obj in (
+            getattr(self, "rename_btn", None),
+            getattr(self, "rename_frame", None),
+        ):
+            tip = self.rename_btn.toolTip() if hasattr(self, "rename_btn") else ""
+            if tip:
+                QToolTip.showText(event.globalPos(), tip, obj)
+                return True
+        return super().eventFilter(obj, event)
 
     def _guide_banner_html(self, state):
         head = t(f"guide.{state}")
@@ -2335,14 +2526,9 @@ class MainWindow(QMainWindow):
             return f"{head}<br><span style='font-weight:500; font-size:10pt'>{extra}</span>"
         return head
 
-    def _detect_summary_html(self):
+    def _detect_missing_pairs(self):
         videos = [i for i in self.items if i.kind == "video"]
         subs = [i for i in self.items if i.kind == "sub"]
-        episodes = {
-            (i.title.strip().lower(), i.season, i.episode)
-            for i in videos
-            if i.season is not None and i.episode is not None
-        }
         missing_videos = sum(
             1 for i in videos
             if i.status in {"Felirat nélkül", "Nem egyező pár"}
@@ -2351,7 +2537,19 @@ class MainWindow(QMainWindow):
             1 for i in subs
             if i.status in {"Videó nélkül", "Nem egyező pár"}
         )
-        missing = max(missing_videos, missing_subs)
+        return videos, subs, max(missing_videos, missing_subs)
+
+    def _detect_all_pairs_ok(self):
+        videos, subs, missing = self._detect_missing_pairs()
+        return missing == 0 and bool(videos or subs)
+
+    def _detect_summary_html(self):
+        videos, subs, missing = self._detect_missing_pairs()
+        episodes = {
+            (i.title.strip().lower(), i.season, i.episode)
+            for i in videos
+            if i.season is not None and i.episode is not None
+        }
         names = []
         for item in videos:
             name = item.title.strip()
@@ -2386,9 +2584,7 @@ class MainWindow(QMainWindow):
             return
 
         if QMessageBox.question(
-            self, "Lista ürítése",
-            "Biztosan törlöd a teljes feldolgozási listát?\n\n"
-            "Ez csak a program listáját üríti ki, az eredeti fájlokat nem törli."
+            self, t("msg.clear_title"), t("msg.clear")
         ) == QMessageBox.StandardButton.Yes:
             self.items = []
             self._set_title_programmatic("", manual=False)
@@ -2399,16 +2595,14 @@ class MainWindow(QMainWindow):
         selected_count = sum(1 for item in self.items if item.selected)
         if not selected_count:
             QMessageBox.information(
-                self, "Nincs kijelölés",
-                "Nincs kijelölt sor, amit törölni lehetne a listából."
+                self, t("msg.no_sel_title"), t("msg.no_sel")
             )
             return
 
         answer = QMessageBox.question(
             self,
-            "Kijelöltek törlése",
-            f"{selected_count} kijelölt fájl eltávolítása a feldolgozási listából?\n\n"
-            "Az eredeti fájlokat ez nem törli és nem módosítja.",
+            t("msg.remove_title"),
+            t("msg.remove", n=selected_count),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
@@ -2536,12 +2730,12 @@ class MainWindow(QMainWindow):
         item = visible[row]
         menu = QMenu(self)
 
-        open_action = menu.addAction("Megnyitás")
-        folder_action = menu.addAction("Mappa megnyitása")
-        copy_path_action = menu.addAction("Forrásútvonal másolása")
+        open_action = menu.addAction(t("ctx.open"))
+        folder_action = menu.addAction(t("ctx.folder"))
+        copy_path_action = menu.addAction(t("ctx.copy_path"))
         menu.addSeparator()
-        select_action = menu.addAction("Kijelölés")
-        deselect_action = menu.addAction("Kijelölés megszüntetése")
+        select_action = menu.addAction(t("ctx.select"))
+        deselect_action = menu.addAction(t("ctx.deselect"))
 
         chosen = menu.exec(self.table.viewport().mapToGlobal(pos))
 
@@ -2642,13 +2836,7 @@ class MainWindow(QMainWindow):
         btn.setEnabled(bool(has_review))
         btn.setChecked(bool(self.show_review_only) and bool(has_review))
         btn.blockSignals(False)
-        if self.show_review_only:
-            btn.setStyleSheet(
-                "QPushButton { background: #fff3e0; border: 1px solid #ffb74d; "
-                "border-radius: 4px; padding: 4px 10px; font-weight: 600; }"
-            )
-        else:
-            btn.setStyleSheet("")
+        _set_qss_state(btn, "active", "true" if self.show_review_only else "false")
 
     def _scroll_to_first_review(self):
         if not hasattr(self, "table"):
@@ -2842,7 +3030,7 @@ class MainWindow(QMainWindow):
         cell = QTableWidgetItem(text)
         src = str(self._source_path(item))
         cell.setToolTip(f"{status_text(state)}\n{src}")
-        cell.setForeground(QColor("#616161"))
+        cell.setForeground(QColor(self._theme()["text_muted"]))
         self.table.setItem(row, COL_PROGRESS, cell)
 
     def _update_copy_row(self, item):
@@ -2855,15 +3043,7 @@ class MainWindow(QMainWindow):
             return
         state=self._copy_state(item)
         state_item=QTableWidgetItem(state)
-        styles = {
-            "Már létezik": ("#b71c1c", "#ffebee"),
-            "Névütközés": ("#b71c1c", "#ffebee"),
-            "Nem egyező pár": ("#b71c1c", "#ffebee"),
-            "Hiba": ("#b71c1c", "#ffebee"),
-            "Nem fért el": ("#e65100", "#fff3e0"),
-            "Megszakítva": ("#8e0000", "#ffebee"),
-            "Átmásolva": ("#1b5e20", "#e8f5e9"),
-        }
+        styles = copy_state_colors(self._theme())
         if state in styles:
             fg, bg = styles[state]
             state_item.setForeground(QColor(fg))
@@ -2898,13 +3078,13 @@ class MainWindow(QMainWindow):
         try:
             self.table.setRowCount(len(visible))
             for row, item in enumerate(visible):
-                series=item.title.strip() or "Ismeretlen"
+                series=item.title.strip() or t("preview.unknown")
                 season=f"S{item.season:02d}" if item.season is not None else "—"
                 episode=f"E{item.episode:02d}" if item.episode is not None else "—"
                 # Valódi, kattintható kijelölő a sorhoz.
                 check = QCheckBox()
                 check.setChecked(bool(item.selected))
-                check.setToolTip("A sor kijelölése / kijelölés megszüntetése")
+                check.setToolTip(t("tip.row_check"))
                 check.stateChanged.connect(
                     lambda state, obj=item: self._checkbox_changed(obj, state)
                 )
@@ -2932,31 +3112,24 @@ class MainWindow(QMainWindow):
                     COL_SIZE: size_text,
                 }
                 review = self._review_kind(item)
+                tok = self._theme()
                 primary_font = QFont("Segoe UI", 10, QFont.Weight.DemiBold)
-                secondary_fg = QColor("#616161")
+                secondary_fg = QColor(tok["text_secondary"])
+                row_bg = {
+                    "ok": tok["row_ok"],
+                    "blocked": tok["row_blocked"],
+                }.get(review, tok["row_review"])
                 for col, value in values.items():
                     cell = QTableWidgetItem(value)
                     cell.setToolTip(tip)
-                    if review == "ok":
-                        cell.setBackground(QColor("#e8f5e9"))
-                    elif review == "blocked":
-                        cell.setBackground(QColor("#ffebee"))
-                    else:
-                        cell.setBackground(QColor("#fff8e1"))
+                    cell.setBackground(QColor(row_bg))
                     if col in (COL_ORIG, COL_NEW, COL_STATUS):
                         cell.setFont(primary_font)
                     else:
                         cell.setForeground(secondary_fg)
                     if col == COL_STATUS:
                         state = copy_state
-                        styles = {
-                            "Már létezik": ("#b71c1c", "#ffebee"),
-                            "Névütközés": ("#b71c1c", "#ffebee"),
-                            "Hiba": ("#b71c1c", "#ffebee"),
-                            "Nem fért el": ("#e65100", "#fff3e0"),
-                            "Megszakítva": ("#8e0000", "#ffebee"),
-                            "Átmásolva": ("#1b5e20", "#e8f5e9"),
-                        }
+                        styles = copy_state_colors(tok)
                         if state in styles:
                             fg, bg = styles[state]
                             cell.setForeground(QColor(fg))
@@ -3024,7 +3197,7 @@ class MainWindow(QMainWindow):
                     mark=selected_mark,
                     original=Path(item.path).name,
                     new_name=item.new_name or "—",
-                    status=status_text(item.status),
+                    status=self._status_cell_text(item),
                     note=note,
                     copy=status_text(self._copy_state(item)),
                 )
@@ -3063,7 +3236,7 @@ class MainWindow(QMainWindow):
 
         mixed_mode_note = ""
         if self.mode_value == "Sorozat" and summary["film_count"]:
-            mixed_mode_note = t("check.mixed_note")
+            mixed_mode_note = t("check.mixed_note", mode=t("mode.mixed"))
 
         issue_lines = []
         for item in issue_items[:8]:
@@ -3071,7 +3244,7 @@ class MainWindow(QMainWindow):
                 label = f"{item.title.strip() or t('preview.unknown')} S{item.season:02d}E{item.episode:02d}"
             else:
                 label = item.title.strip() or t("check.unknown_movie")
-            reason = item.note or status_text(item.status)
+            reason = self._visible_note(item) or self._status_cell_text(item)
             issue_lines.append(f"• {label} — {self._source_path(item).name}: {reason}")
         if len(issue_items) > 8:
             issue_lines.append(t("check.more_files", n=len(issue_items) - 8))
@@ -3314,8 +3487,7 @@ class MainWindow(QMainWindow):
         if not changes:
             self.refresh()
             QMessageBox.information(
-                self, "Nincs teendő",
-                "Nem maradt végrehajtható művelet. A problémás fájlok a listában maradtak."
+                self, t("msg.idle_title"), t("msg.idle_left")
             )
             return
 
@@ -3328,11 +3500,12 @@ class MainWindow(QMainWindow):
                 total_bytes = free_bytes = 0
             if total_bytes and free_bytes and total_bytes > free_bytes:
                 ans = QMessageBox.question(
-                    self, "A teljes anyag nem fog elférni",
-                    f"Szükséges hely: {total_bytes / (1024**3):.1f} GB\n"
-                    f"Szabad hely: {free_bytes / (1024**3):.1f} GB\n\n"
-                    "A program a teljes videó + felirat párokat addig másolja, amíg van hely.\n"
-                    "A már sikeresen átmásolt párok megmaradnak.\n\nFolytatod?",
+                    self, t("msg.nospace_title"),
+                    t(
+                        "msg.nospace",
+                        needed=f"{total_bytes / (1024**3):.1f}",
+                        free=f"{free_bytes / (1024**3):.1f}",
+                    ),
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                     QMessageBox.StandardButton.Yes
                 )
@@ -3354,8 +3527,8 @@ class MainWindow(QMainWindow):
             except OSError as exc:
                 QMessageBox.critical(
                     self,
-                    "Kimeneti mappa",
-                    f"A kimeneti mappát nem sikerült létrehozni:\n{destination}\n\n{exc}"
+                    t("msg.output_mkdir_title"),
+                    t("msg.output_mkdir", path=destination, exc=exc),
                 )
                 return
 
@@ -3388,7 +3561,7 @@ class MainWindow(QMainWindow):
 
         current = 0
         total_changes = len(changes)
-        progress_label = "Másolás" if copy_mode else "Átnevezés"
+        progress_label = t("progress.copy") if copy_mode else t("progress.rename")
         self.cancel_requested = False
         self._rename_busy = True
         self._set_cancel_enabled(True)
@@ -3427,7 +3600,7 @@ class MainWindow(QMainWindow):
                             pair_item.note = "A teljes videó + felirat pár nem fért el"
                             failed.append((pair_item, pair_item.note))
                         current += len(pair)
-                        self._progress_step(current, total_changes, progress_label, "Nem fért el – következő pár")
+                        self._progress_step(current, total_changes, progress_label, t("progress.nospace_next"))
                         continue
 
                 pair_created = []
@@ -3519,7 +3692,7 @@ class MainWindow(QMainWindow):
                             pair_item.path = str(old_path)
                         failed.append((pair_item, pair_item.note or "A teljes pár visszaállítva"))
                     current += len(pair)
-                    self._progress_step(current, total_changes, progress_label, "Pár visszaállítva")
+                    self._progress_step(current, total_changes, progress_label, t("progress.pair_restored"))
                     continue
 
                 # A pár csak most tekinthető késznek: előzmény + belső állapot egyszerre frissül.
@@ -3548,7 +3721,7 @@ class MainWindow(QMainWindow):
             if current >= total_changes:
                 self._progress_finish()
             else:
-                self._progress_step(current, total_changes, progress_label, "Hátralévő fájlok")
+                self._progress_step(current, total_changes, progress_label, t("progress.remaining"))
 
         except Exception as exc:
             self._set_cancel_enabled(False)
@@ -3568,8 +3741,8 @@ class MainWindow(QMainWindow):
                 self.save_history()
                 self.update_history_view()
             QMessageBox.critical(
-                self, "Műveleti hiba",
-                f"A művelet nem fejeződött be.\n\n{exc}"
+                self, t("msg.op_error_title"),
+                t("msg.op_error", exc=exc)
             )
             return
         finally:
@@ -3597,20 +3770,17 @@ class MainWindow(QMainWindow):
         self.refresh()
         self.update_history_view()
 
-        message = f'{len(record["changes"])} fájl elkészült.'
+        message = t("msg.done_files", n=len(record["changes"]))
         if failed:
-            message += f"\n\n{len(failed)} fájl kimaradt."
+            message += "\n\n" + t("msg.done_failed", n=len(failed))
         if was_cancelled:
-            message = "A feladatot megszakítottad.\n\n" + message
+            message = t("msg.done_cancelled") + "\n\n" + message
         if copy_mode:
-            message += (
-                f"\n\nKimenet:\n{destination}"
-                "\n\nAz eredeti fájlok változatlanok maradtak."
-            )
+            message += "\n\n" + t("msg.done_copy", path=destination)
         if failed and any("már létezett" in reason for _, reason in failed):
-            message += "\nA már létező célfájlokat nem módosítottuk."
+            message += "\n" + t("msg.done_exists")
 
-        QMessageBox.information(self, "Művelet vége", message)
+        QMessageBox.information(self, t("msg.done_title"), message)
 
     # ---------- history ----------
 
@@ -3642,8 +3812,8 @@ class MainWindow(QMainWindow):
         except OSError as exc:
             QMessageBox.warning(
                 self,
-                "Előzmények mentése",
-                f"Az előzményeket nem sikerült elmenteni:\n{exc}"
+                t("hist.save_title"),
+                t("hist.save", exc=exc),
             )
 
     def update_history_view(self):
@@ -3668,15 +3838,18 @@ class MainWindow(QMainWindow):
             hl.addWidget(check)
             self.hist.setCellWidget(row, 0, holder)
 
-            operation = record.get("operation", "Átnevezés")
-            title = record.get("title", "Ismeretlen")
+            operation = hist_op_text(record.get("operation", "Átnevezés"))
+            title = record.get("title", "") or t("hist.unknown")
             destination = record.get("destination", "")
             count = len(record.get("changes", []))
             failed_count = len(record.get("failed", []))
             status = record.get("status", "")
-            result_text = f"{count} kész" if failed_count == 0 else f"{count} kész / {failed_count} kimaradt"
+            result_text = (
+                t("hist.result_ok", n=count) if failed_count == 0
+                else t("hist.result_partial", n=count, failed=failed_count)
+            )
             if status:
-                result_text += f" — {status}"
+                result_text += f" — {hist_status_text(status)}"
 
             values = [
                 str(index), record.get("time", ""), operation, title,
@@ -3685,7 +3858,7 @@ class MainWindow(QMainWindow):
             for column, value in enumerate(values, start=1):
                 cell = QTableWidgetItem(value)
                 if status in {"Visszavonva", "Megszakítva", "Hiba"} and column == 3:
-                    cell.setForeground(QColor("#b71c1c"))
+                    cell.setForeground(QColor(self._theme()["danger"]))
                     cell.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
                 if column == 5 and failed_count:
                     cell.setToolTip(t("hist.failed_tip"))
@@ -3699,7 +3872,7 @@ class MainWindow(QMainWindow):
             if not isinstance(entry, dict):
                 continue
             file_text = str(entry.get("file") or "")
-            reason_text = str(entry.get("reason") or "")
+            reason_text = note_text(str(entry.get("reason") or ""))
             items.append(t("hist.failed_item", file=file_text, reason=reason_text))
         return t("hist.failed_body", n=len(items), list="\n\n".join(items))
 
@@ -3722,7 +3895,6 @@ class MainWindow(QMainWindow):
             self, t("hist.failed_title"), self._format_history_failed_text(record)
         )
 
-
     def _history_checkbox_changed(self, key, state):
         if state == Qt.CheckState.Checked.value:
             self.history_selected_keys.add(key)
@@ -3743,12 +3915,11 @@ class MainWindow(QMainWindow):
     def delete_selected_history(self):
         indices = self._selected_history_indices()
         if not indices:
-            QMessageBox.information(self, "Nincs kijelölve", "Jelölj ki legalább egy előzményt.")
+            QMessageBox.information(self, t("hist.none_title"), t("hist.none"))
             return
         if QMessageBox.question(
-            self, "Kijelölt előzmények törlése",
-            f"Biztosan törlöd a kijelölt {len(indices)} előzményt?\n\n"
-            "Ez csak az előzménybejegyzéseket törli, a fájlokat nem állítja vissza és nem törli."
+            self, t("hist.delete_sel_title"),
+            t("hist.delete_sel", n=len(indices)),
         ) != QMessageBox.StandardButton.Yes:
             return
         for idx in reversed(indices):
@@ -3761,8 +3932,7 @@ class MainWindow(QMainWindow):
         indices = self._selected_history_indices()
         if len(indices) != 1:
             QMessageBox.information(
-                self, "Egy előzmény szükséges",
-                "A visszaállításhoz pontosan egy előzményt jelölj ki."
+                self, t("undo.need_one_title"), t("undo.need_one")
             )
             return
         row = indices[0]
@@ -3773,7 +3943,7 @@ class MainWindow(QMainWindow):
         changes = record.get("changes", [])
 
         if record.get("status") == "Visszavonva":
-            QMessageBox.information(self, "Már visszavonva", "Ez a művelet már vissza lett állítva.")
+            QMessageBox.information(self, t("undo.already_title"), t("undo.already"))
             return
 
         if operation == "Másolás és átnevezés":
@@ -3781,11 +3951,16 @@ class MainWindow(QMainWindow):
             if copy_check is not None:
                 kind, path = copy_check
                 if kind == "missing":
-                    QMessageBox.critical(self, "Visszaállítás nem biztonságos", "A kimeneti fájlok állapota megváltozott, ezért a műveletet nem hajtottam végre.")
+                    QMessageBox.critical(self, t("undo.unsafe_title"), t("undo.unsafe_missing"))
                 else:
-                    QMessageBox.critical(self, "Visszaállítás nem biztonságos", f"A fájl időközben megváltozott:\n{path}\n\nA program nem törölte.")
+                    QMessageBox.critical(
+                        self, t("undo.unsafe_title"),
+                        t("undo.unsafe_changed", path=path),
+                    )
                 return
-            if QMessageBox.question(self, "Kimenet visszaállítása", f"{len(changes)} létrehozott fájl törlésére készülsz.\n\nAz eredeti fájlokat ez nem érinti.\n\nFolytatod?") != QMessageBox.StandardButton.Yes:
+            if QMessageBox.question(
+                self, t("undo.copy_title"), t("undo.copy_body", n=len(changes))
+            ) != QMessageBox.StandardButton.Yes:
                 return
             undo_failures = apply_copy_undo(changes)
             failed_keys = {
@@ -3793,7 +3968,7 @@ class MainWindow(QMainWindow):
             }
         else:
             if not verify_inplace_undo(changes):
-                QMessageBox.critical(self, "Visszaállítás nem biztonságos", "A fájlállapot megváltozott, ezért a műveletet nem hajtottam végre.")
+                QMessageBox.critical(self, t("undo.unsafe_title"), t("undo.unsafe_state"))
                 return
             undo_failures = apply_inplace_undo(changes)
             failed_keys = {
@@ -3852,8 +4027,8 @@ class MainWindow(QMainWindow):
             self.refresh()
             QMessageBox.critical(
                 self,
-                "Visszaállítás nem biztonságos",
-                "A visszaállítás részben sikerült, a megmaradt fájlok az előzményben maradtak.",
+                t("undo.unsafe_title"),
+                t("undo.partial"),
             )
             return
 
@@ -3861,10 +4036,12 @@ class MainWindow(QMainWindow):
         self.save_history()
         self.update_history_view()
         self.refresh()
-        QMessageBox.information(self, "Kész", "A kiválasztott művelet visszaállítva. Az előzmény megmaradt, Visszavonva állapotban.")
+        QMessageBox.information(self, t("undo.done_title"), t("undo.done"))
 
     def clear_history(self):
-        if QMessageBox.question(self, "Összes előzmény törlése", "Biztosan törlöd az összes előzményt?") == QMessageBox.StandardButton.Yes:
+        if QMessageBox.question(
+            self, t("hist.clear_confirm_title"), t("hist.clear_confirm")
+        ) == QMessageBox.StandardButton.Yes:
             self.history = []
             self.history_selected_keys.clear()
             self.save_history()
@@ -3873,7 +4050,7 @@ class MainWindow(QMainWindow):
     def export_history(self):
         path, _ = QFileDialog.getSaveFileName(
             self,
-            "Előzmények exportálása",
+            t("hist.export_title"),
             "",
             "JSON (*.json);;TXT (*.txt);;CSV (*.csv)"
         )
@@ -3897,12 +4074,12 @@ class MainWindow(QMainWindow):
             blocks = []
             for record in self.history:
                 blocks.append(
-                    f"Időpont: {record.get('time', '')}\n"
-                    f"Művelet: {record.get('operation', '')}\n"
-                    f"Sorozat / film: {record.get('title', '')}\n"
-                    f"Hely: {record.get('destination', '')}\n"
-                    f"Fájlok: {len(record.get('changes', []))}\n"
-                    f"Kimaradt: {len(record.get('failed', []))}\n"
+                    f"{t('hist.export_txt_time')}: {record.get('time', '')}\n"
+                    f"{t('hist.export_txt_op')}: {hist_op_text(record.get('operation', ''))}\n"
+                    f"{t('hist.export_txt_title')}: {record.get('title', '')}\n"
+                    f"{t('hist.export_txt_place')}: {record.get('destination', '')}\n"
+                    f"{t('hist.export_txt_files')}: {len(record.get('changes', []))}\n"
+                    f"{t('hist.export_txt_failed')}: {len(record.get('failed', []))}\n"
                     + "\n".join(
                         f"  {change['old']} -> {change['new']}"
                         for change in record.get("changes", [])
@@ -3976,9 +4153,7 @@ class MainWindow(QMainWindow):
 
     def show_help(self):
         dialog = QDialog(self)
-        dialog.setWindowTitle(
-            f"Súgó – {APP_NAME} v{APP_VERSION}"
-        )
+        dialog.setWindowTitle(t("help.title", name=APP_NAME, version=APP_VERSION))
         dialog.resize(780, 620)
 
         layout = QVBoxLayout(dialog)
@@ -3986,25 +4161,11 @@ class MainWindow(QMainWindow):
         text = QTextEdit()
         text.setReadOnly(True)
         text.setPlainText(
-            f"{APP_NAME} – Súgó\n"
-            f"Verzió: {APP_VERSION}\n\n"
-            "ELSŐ LÉPÉSEK\n"
-            "1. Mappa hozzáadása vagy Fájlok hozzáadása.\n"
-            "2. Ellenőrizd az Előnézetet.\n"
-            "3. A bizonytalan eseteket a program nem nevezi át automatikusan.\n"
-            "4. Az Átnevezés csak a problémamentes, kijelölt elemeket dolgozza fel.\n\n"
-            "SOROZAT MÓD\n"
-            "A program az S01E01 vagy 1x01 formátumú epizódazonosítókat "
-            "biztonságosan felismeri. A puszta E05 formátumot szándékosan "
-            "nem fogadja el automatikusan.\n\n"
-            "FILM MÓD\n"
-            "Film esetén nincs évad- és epizódkövetelmény.\n\n"
-            "FONTOS\n"
-            "A program nem írja át a fájlok tartalmát, csak a fájlneveket módosítja."
+            t("help.body", name=APP_NAME, version=APP_VERSION)
         )
         layout.addWidget(text)
 
-        close = QPushButton("Bezárás")
+        close = QPushButton(t("help.close"))
         close.clicked.connect(dialog.accept)
         layout.addWidget(close, alignment=Qt.AlignmentFlag.AlignRight)
 
@@ -4017,42 +4178,214 @@ class MainWindow(QMainWindow):
             value = "Világos"
 
         self.appearance = value
+        dark = value == "Sötét"
+        tok = theme_tokens(dark)
+        app = QApplication.instance()
 
-        if value == "Sötét":
-            palette = QPalette()
-            palette.setColor(QPalette.ColorRole.Window, QColor(35, 35, 35))
-            palette.setColor(QPalette.ColorRole.WindowText, QColor(235, 235, 235))
-            palette.setColor(QPalette.ColorRole.Base, QColor(28, 28, 28))
-            palette.setColor(QPalette.ColorRole.AlternateBase, QColor(45, 45, 45))
-            palette.setColor(QPalette.ColorRole.Text, QColor(235, 235, 235))
-            palette.setColor(QPalette.ColorRole.Button, QColor(55, 55, 55))
-            palette.setColor(QPalette.ColorRole.ButtonText, QColor(235, 235, 235))
-            palette.setColor(QPalette.ColorRole.Highlight, QColor(70, 110, 180))
-            palette.setColor(QPalette.ColorRole.HighlightedText, QColor(255, 255, 255))
-            QApplication.instance().setPalette(palette)
-        else:
-            QApplication.instance().setPalette(
-                QApplication.style().standardPalette()
-            )
+        palette = QPalette()
+        palette.setColor(QPalette.ColorRole.Window, QColor(tok["window"]))
+        palette.setColor(QPalette.ColorRole.WindowText, QColor(tok["text"]))
+        palette.setColor(QPalette.ColorRole.Base, QColor(tok["surface"]))
+        palette.setColor(QPalette.ColorRole.AlternateBase, QColor(tok["surface_alt"]))
+        palette.setColor(QPalette.ColorRole.Text, QColor(tok["text"]))
+        palette.setColor(QPalette.ColorRole.Button, QColor(tok["raised"]))
+        palette.setColor(QPalette.ColorRole.ButtonText, QColor(tok["text"]))
+        palette.setColor(QPalette.ColorRole.Highlight, QColor(tok["selected"]))
+        palette.setColor(QPalette.ColorRole.HighlightedText, QColor(tok["text"]))
+        palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(tok["raised"]))
+        palette.setColor(QPalette.ColorRole.ToolTipText, QColor(tok["text"]))
+        palette.setColor(QPalette.ColorRole.PlaceholderText, QColor(tok["text_muted"]))
+        palette.setColor(QPalette.ColorRole.Light, QColor(tok["surface"]))
+        palette.setColor(QPalette.ColorRole.Midlight, QColor(tok["surface_alt"]))
+        palette.setColor(QPalette.ColorRole.Mid, QColor(tok["border"]))
+        palette.setColor(QPalette.ColorRole.Dark, QColor(tok["border_strong"]))
+        palette.setColor(QPalette.ColorRole.BrightText, QColor(tok["white"]))
+        app.setStyle("Fusion")
+        app.setPalette(palette)
+        app.setStyleSheet(build_app_stylesheet(dark))
+        self._apply_cta_styles()
 
         self.update_appearance_buttons()
+        if hasattr(self, "guide_banner"):
+            self._update_guided_workflow()
+        if hasattr(self, "table") and getattr(self, "items", None):
+            self.refresh(reanalyze=False)
+        if hasattr(self, "hist"):
+            self.update_history_view()
         if hasattr(self, "sort_combo"):
             self.save_settings(silent=True)
 
-    def update_appearance_buttons(self):
-        if not hasattr(self, "light_btn"):
+    def _apply_cta_styles(self):
+        """CTA + sima gombok: widget-level QSS, Fusion ne fesse felül a kontúrt."""
+        tok = self._theme()
+        plain = plain_button_stylesheet(tok)
+        if hasattr(self, "add_btn"):
+            self.add_btn.setStyleSheet(primary_button_stylesheet(tok))
+        if hasattr(self, "empty_add_btn"):
+            self.empty_add_btn.setStyleSheet(primary_button_stylesheet(tok))
+        if hasattr(self, "cancel_btn"):
+            self.cancel_btn.setStyleSheet(filled_button_stylesheet(tok, "danger"))
+        if hasattr(self, "hist_undo_btn"):
+            self.hist_undo_btn.setStyleSheet(filled_button_stylesheet(tok, "danger"))
+        if hasattr(self, "test_lab_btn"):
+            self.test_lab_btn.setStyleSheet(filled_button_stylesheet(tok, "dev"))
+        if hasattr(self, "patch_btn"):
+            self.patch_btn.setStyleSheet(filled_button_stylesheet(tok, "muted"))
+        if hasattr(self, "rename_btn"):
+            ready = self.rename_btn.property("ready") == "true"
+            self.rename_btn.setStyleSheet(rename_button_stylesheet(tok, ready))
+        for name in (
+            "clear_btn", "check_btn", "refresh_preview_btn", "help_btn",
+            "search_btn", "select_all_files_btn", "deselect_files_btn",
+            "remove_selected_btn", "select_review_btn", "output_browse_btn",
+            "save_settings_btn", "refresh_list_btn", "reset_settings_btn",
+            "select_all_btn", "select_none_btn", "select_missing_btn",
+            "hist_select_all_btn", "hist_deselect_btn", "hist_delete_btn",
+            "hist_failed_btn", "hist_export_btn", "hist_clear_btn",
+        ):
+            widget = getattr(self, name, None)
+            if widget is not None:
+                widget.setStyleSheet(plain)
+        if hasattr(self, "var_buttons"):
+            for button in self.var_buttons.values():
+                button.setStyleSheet(plain)
+        if hasattr(self, "show_review_only_btn"):
+            self.show_review_only_btn.setStyleSheet(review_button_stylesheet(tok))
+
+    def _freeze_caption_width(self, widget, *keys):
+        """Egyszeres szélesség: a hosszabb HU/EN sizeHint. A gomb nem zsugorodik."""
+        if widget is None or getattr(widget, "_sr_width_frozen", False):
             return
-        self.light_btn.setChecked(self.appearance == "Világos")
-        self.dark_btn.setChecked(self.appearance == "Sötét")
-        style = (
-            "QPushButton { background: transparent; border: 1px solid transparent; "
-            "border-radius: 6px; padding: 1px; }"
-            "QPushButton:hover { background: rgba(128,128,128,35); }"
-            "QPushButton:checked { border: 2px solid #666666; "
-            "background: rgba(128,128,128,45); }"
+        original = widget.text() if hasattr(widget, "text") else ""
+        previous_min = widget.minimumWidth()
+        widget.setMinimumWidth(0)
+        widget.setMaximumWidth(16777215)
+        widest = 0
+        for key in keys:
+            for lang in ("hu", "en"):
+                text = (STRINGS.get(lang) or {}).get(key)
+                if text is None:
+                    continue
+                widget.setText(text)
+                widest = max(widest, widget.sizeHint().width())
+        widget.setText(original)
+        width = max(widest, previous_min)
+        if isinstance(widget, QPushButton):
+            widget.setFixedWidth(width)
+        else:
+            widget.setMinimumWidth(width)
+        widget._sr_width_frozen = True
+
+    def _freeze_combo_width(self, combo, key_map):
+        if combo is None or getattr(combo, "_sr_width_frozen", False):
+            return
+        fm = combo.fontMetrics()
+        previous_min = combo.minimumWidth()
+        combo.setMinimumWidth(0)
+        chrome = max(combo.sizeHint().width() - fm.horizontalAdvance(combo.currentText()), 0)
+        combo.setMinimumWidth(max(previous_min, _i18n_map_max_px(fm, key_map) + chrome))
+        combo.setFixedWidth(combo.minimumWidth())
+        combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
-        self.light_btn.setStyleSheet(style)
-        self.dark_btn.setStyleSheet(style)
+        combo._sr_width_frozen = True
+
+    def _stabilize_i18n_geometry(self):
+        """HU/EN feliratcsere a widgeten belül maradjon, a pozíció ne ugorjon."""
+        fm = self.fontMetrics()
+        if hasattr(self, "add_btn"):
+            self._freeze_caption_width(self.add_btn, "btn.add")
+            self._freeze_caption_width(self.clear_btn, "btn.clear_list")
+            self._freeze_caption_width(self.check_btn, "btn.check")
+            self._freeze_caption_width(self.refresh_preview_btn, "btn.refresh_preview")
+        if hasattr(self, "help_btn"):
+            self._freeze_caption_width(self.help_btn, "btn.help")
+        if hasattr(self, "test_lab_btn"):
+            self._freeze_caption_width(self.test_lab_btn, "btn.testlab")
+        if hasattr(self, "patch_btn"):
+            self._freeze_caption_width(self.patch_btn, "btn.patch")
+        if hasattr(self, "rename_btn"):
+            self._freeze_caption_width(self.rename_btn, "btn.rename")
+            self.rename_btn.setMinimumWidth(max(150, self.rename_btn.minimumWidth()))
+        if hasattr(self, "search_btn"):
+            self._freeze_caption_width(self.search_btn, "files.search")
+            self._freeze_caption_width(self.sort_label, "files.sort")
+            self._freeze_combo_width(self.sort_combo, SORT_KEYS)
+            self._freeze_caption_width(self.select_all_files_btn, "files.select_all")
+            self._freeze_caption_width(self.deselect_files_btn, "files.deselect")
+            self._freeze_caption_width(self.remove_selected_btn, "files.remove_selected")
+            self._freeze_caption_width(self.select_review_btn, "files.select_review")
+            if hasattr(self, "show_review_only_btn"):
+                self._freeze_caption_width(self.show_review_only_btn, "files.show_review_only")
+            self._freeze_caption_width(self.output_browse_btn, "output.browse")
+        if hasattr(self, "output_grid"):
+            out_label = _i18n_max_px(fm, "output.action", "output.folder") + 6
+            self.output_grid.setColumnMinimumWidth(0, out_label)
+            self.output_grid.setColumnStretch(0, 0)
+            self.output_grid.setColumnStretch(1, 1)
+            expanding = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            self.output_mode_combo.setSizePolicy(expanding)
+            self.output_mode_combo.setSizeAdjustPolicy(
+                QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+            )
+            self.output_edit.setSizePolicy(expanding)
+            self.output_action_label.setMinimumWidth(out_label)
+            self.output_folder_label.setMinimumWidth(out_label)
+        if hasattr(self, "settings_grid"):
+            label_w = _i18n_max_px(
+                fm,
+                "mode.label", "name.series", "name.movie", "name.mixed",
+                "template.label", "vars.base", "vars.series", "pref.label",
+            ) + 6
+            self.settings_grid.setColumnMinimumWidth(0, label_w)
+            self.settings_grid.setColumnStretch(0, 0)
+            self.settings_grid.setColumnStretch(1, 1)
+            expanding = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            for widget in (
+                self.mode_combo, self.title_edit, self.template_edit,
+                self.subtitle_pref_combo,
+            ):
+                widget.setSizePolicy(expanding)
+            for combo in (self.mode_combo, self.subtitle_pref_combo):
+                combo.setSizeAdjustPolicy(
+                    QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+                )
+            for label in (
+                self.mode_label, self.name_label, self.template_label,
+                self.base_vars_label, self.subtitle_pref_label,
+            ):
+                label.setMinimumWidth(label_w)
+            if not getattr(self.detected_box, "_sr_width_frozen", False):
+                detect_need = _i18n_max_px(fm, "detect.box", "detect.none", "detect.fail")
+                self.detected_box.setMinimumWidth(
+                    max(self.detected_box.sizeHint().width(), detect_need)
+                )
+                self.detected_box._sr_width_frozen = True
+        if hasattr(self, "save_settings_btn"):
+            self._freeze_caption_width(self.save_settings_btn, "btn.save_settings")
+            self._freeze_caption_width(self.refresh_list_btn, "btn.refresh_list")
+            self._freeze_caption_width(self.reset_settings_btn, "btn.reset_settings")
+        bar = self.tabs.tabBar() if hasattr(self, "tabs") else None
+        if isinstance(bar, _StableTabBar) and not bar._min_widths:
+            keys = ("tab.files", "tab.settings", "tab.preview", "tab.history")
+            tab_fm = bar.fontMetrics()
+            pad = 40
+            bar.set_min_widths({
+                i: _i18n_max_px(tab_fm, key) + pad for i, key in enumerate(keys)
+            })
+
+    def _toggle_appearance(self):
+        self.set_appearance("Sötét" if self.appearance != "Sötét" else "Világos")
+
+    def update_appearance_buttons(self):
+        if not hasattr(self, "theme_btn"):
+            return
+        dark = self.appearance == "Sötét"
+        self.theme_btn.setIcon(make_theme_toggle_icon(dark))
+        self.theme_btn.setToolTip(
+            t("tip.theme_toggle_dark" if dark else "tip.theme_toggle_light")
+        )
+        _set_qss_state(self.theme_btn, "dark", "true" if dark else "false")
 
 
     def show_first_steps(self):
@@ -4098,15 +4431,6 @@ class MainWindow(QMainWindow):
             return
         self.hu_main_btn.setChecked(self.language == "hu")
         self.en_main_btn.setChecked(self.language == "en")
-        style = (
-            "QPushButton { background: transparent; border: 1px solid transparent; "
-            "border-radius: 6px; padding: 1px; }"
-            "QPushButton:hover { background: rgba(128,128,128,35); }"
-            "QPushButton:checked { border: 2px solid #666666; "
-            "background: rgba(128,128,128,45); }"
-        )
-        self.hu_main_btn.setStyleSheet(style)
-        self.en_main_btn.setStyleSheet(style)
 
     def _set_status(self, text):
         label = getattr(self, "status_label", None) or getattr(self, "status_label", None)
@@ -4142,9 +4466,12 @@ class MainWindow(QMainWindow):
             self.about_act.setText(t("menu.about"))
         if hasattr(self, "rename_btn"):
             self.rename_btn.setText(t("btn.rename"))
-        if hasattr(self, "light_btn"):
-            self.light_btn.setToolTip(t("tip.light"))
-            self.dark_btn.setToolTip(t("tip.dark"))
+            self._apply_rename_next_step_tooltip()
+        if hasattr(self, "theme_btn"):
+            self.theme_btn.setToolTip(
+                t("tip.theme_toggle_dark" if self.appearance == "Sötét"
+                  else "tip.theme_toggle_light")
+            )
             self.hu_main_btn.setToolTip(t("tip.hu"))
             self.en_main_btn.setToolTip(t("tip.en"))
         if hasattr(self, "tabs"):
@@ -4155,6 +4482,13 @@ class MainWindow(QMainWindow):
         if hasattr(self, "footer_bug_btn"):
             self.footer_bug_btn.setText(t("btn.bug"))
             self.footer_donate_btn.setText(t("btn.donate"))
+        if hasattr(self, "footer_badge"):
+            self.footer_badge.setText(t("footer.test_version"))
+            self.footer_badge.setVisible(show_test_version_mark())
+        if hasattr(self, "settings_intro"):
+            self.settings_intro.setText(t("settings.intro"))
+        if hasattr(self, "naming_heading"):
+            self.naming_heading.setText(t("settings.naming_box"))
         if hasattr(self, "cancel_btn"):
             busy = self.cancel_btn.isEnabled() and getattr(self, "cancel_requested", False)
             self.cancel_btn.setText(t("btn.cancel_busy" if busy else "btn.cancel"))
@@ -4196,7 +4530,8 @@ class MainWindow(QMainWindow):
             self.subtitle_pref_combo.blockSignals(True)
             set_combo_id(self.subtitle_pref_combo, self.subtitle_pref)
             self.subtitle_pref_combo.blockSignals(False)
-            self.advanced_box.setTitle(t("adv.box"))
+            self.advanced_box.setTitle(t("adv.mode"))
+            self.advanced_box.setToolTip(t("adv.mode_tip"))
             self.normalize_cb.setText(t("adv.normalize"))
             self.lang_norm_cb.setText(t("adv.lang_norm"))
             self.subdirs_cb.setText(t("adv.subdirs"))
@@ -4224,6 +4559,7 @@ class MainWindow(QMainWindow):
             self.hist_failed_btn.setText(t("hist.failed"))
             self.hist_export_btn.setText(t("hist.export"))
             self.hist_clear_btn.setText(t("hist.clear"))
+            self.update_history_view()
         if hasattr(self, "output_mode_combo"):
             self.on_output_mode_changed()
         if hasattr(self, "mode_combo"):
@@ -4247,6 +4583,7 @@ class MainWindow(QMainWindow):
         else:
             self._set_status(t("status.zero"))
         self._apply_progress_bar_language()
+        self._stabilize_i18n_geometry()
 
     def set_language(self, language):
         self.language = set_active_language(language)
@@ -4289,6 +4626,7 @@ class MainWindow(QMainWindow):
             "output_mode": self.output_mode,
             "output_dir": self.output_dir,
             "appearance": self.appearance,
+            "advanced_mode": bool(getattr(self, "advanced_mode", False)),
             "version": APP_VERSION
         }
 

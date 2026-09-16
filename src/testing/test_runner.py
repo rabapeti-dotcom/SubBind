@@ -239,7 +239,7 @@ class TestRunnerDialog(QDialog):
         )
 
         blocks = [
-            "Sorozat & film átnevező — Tesztjelentés",
+            "SubBind — Tesztjelentés",
             "Tesztverzió: 0.6.1-TEST",
             f"Indítás: {datetime.datetime.now().isoformat(timespec='seconds')}",
             ""

@@ -1,5 +1,5 @@
 """
-Sorozat & film átnevező – automatizált GUI/engine teszt.
+SubBind – automatizált GUI/engine teszt.
 A teszt izolált ideiglenes könyvtárban dolgozik.
 """
 from pathlib import Path

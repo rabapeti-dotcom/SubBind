@@ -1,6 +1,6 @@
 """
 R1/H: frozen portable artifact — data/ az exe mellett, nem APPDATA.
-A teszt a projekt dist\\SorozatEsFilmAtnevezo mappáját másolja izolált tempbe.
+A teszt a projekt dist\\SubBind mappáját másolja izolált tempbe.
 """
 from pathlib import Path
 import json
@@ -13,8 +13,8 @@ import time
 import unittest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DIST_DIR = PROJECT_ROOT / "dist" / "SorozatEsFilmAtnevezo"
-EXE_NAME = "SorozatEsFilmAtnevezo.exe"
+DIST_DIR = PROJECT_ROOT / "dist" / "SubBind"
+EXE_NAME = "SubBind.exe"
 
 
 class TestR1HPortableArtifact(unittest.TestCase):
@@ -32,7 +32,7 @@ class TestR1HPortableArtifact(unittest.TestCase):
         fake_appdata = Path(tempfile.mkdtemp(prefix="sr_r1h_appdata_"))
         proc = None
         try:
-            dest = iso / "SorozatEsFilmAtnevezo"
+            dest = iso / "SubBind"
             shutil.copytree(DIST_DIR, dest)
             exe = dest / EXE_NAME
             data_dir = dest / "data"

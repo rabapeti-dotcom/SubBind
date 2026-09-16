@@ -1,4 +1,4 @@
-# Decisions — SorozatRenamero 0.6.1
+# Decisions — SubBind 0.6.1
 
 Csak a munkamenetben **expliciten elfogadott** projekt-döntések.
 Az implementációs következtetések külön szakaszban vannak; azok nem döntések.
@@ -89,20 +89,32 @@ Ezek Cursor/audit megfigyelések a kódból. Új szabályt **ne** vezessünk le 
 - TEST_77 / GUI_16 2026-08-26-os FAIL oka az akkori audit szerint: célmappa ütközés (`G:/filmekujmappa/Murderbot.S01E01.srt` már létezett), nem L2 logikai hiba. Izoláció után (2026-09-16): PASS.
 - A WelcomeDialog és a jobb felső HU/EN zászló L1-ben nem változott.
 
-### 0.6.1 RC checkpoint (2026-09-16)
+### 0.6.1 RC1 GUI-stack (2026-09-16)
 
-Nem L7-döntés; a stabil `main` állapota.
+Explicit döntés: az elfogadott GUI-stack **az RC1 része**, nem kísérleti mellékág.
 
-- Stabil commit: **90b41c4**. Verzió 0.6.1.
-- Engine 56 PASS / 0 FAIL; GUI 28 PASS / 0 FAIL; `TEST_96` a final RC EXE-n PASS.
+- Teljes HU/EN localization, lokalizált Help, Advanced mode, elfogadott TV2.x theme/UI.
+- Fájlok: `src/main.py`, `src/i18n.py`, `src/ui_theme.py`, `GUI_27`.
+- Product: SubBind. Fejlesztő: BadMusicHUN. Licenc: GNU GPL v3.0.
+- origin/main HEAD: **b8c38c3**. A `90b41c4` a P1 guide/rename commit, nem a jelenlegi HEAD.
+- RC1 working tree commit/push: még nincs. Új SubBind EXE: még nincs.
+- A motor ettől a döntéstől független, ebben a körben nem változott.
+
+### 0.6.1 motor RC checkpoint (2026-09-16, történeti)
+
+Nem L7-döntés; a P1 utáni stabil motor állapot. **Nem** a jelenlegi RC1 HEAD.
+
+- Akkori commit: **90b41c4**. Verzió 0.6.1.
+- Engine 56 PASS / 0 FAIL; GUI 28 PASS / 0 FAIL; `TEST_96` az akkori EXE-n PASS.
 - P0/P1: nincs. P2: `testing.test_runner` a PYZ-ben; frozen Tesztlabor UI rejtve.
-- TV2.x (`src/i18n.py`, `src/ui_theme.py`) kísérleti, nem a 0.6.1 része.
+- Akkor a TV2.x még working-tree kísérlet volt; az RC1 döntés ezt felülírja (lásd fent).
 - Tervezett felhasználói kiadás: 2026-09-20.
 
 ## Checkpoint
 
-- Version: 0.6.1
-- Stabil commit: 90b41c4
+- Version: 0.6.1 RC1
+- origin/main: b8c38c3
+- RC1 GUI-stack: elfogadva, working tree
 - Completed: C.1, L1, L2.1, L2.2, L2.3, L2.4
 - L7 deferred
 - Tervezett kiadás: 2026-09-20

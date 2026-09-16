@@ -1,4 +1,4 @@
-# Sorozat & film átnevező – 0.6.1 TESTEK
+# SubBind – 0.6.1 TESTEK
 
 Ez a csomag a jelenlegi `src/main.py` működéséhez igazított, izolált teszteket tartalmaz. A 0.6.1-TEST tesztlaborhoz javított futtatási sorrendet használ: a TestCase osztályok definíciója után indul a unittest.
 

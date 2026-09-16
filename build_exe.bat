@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions
 cd /d "%~dp0"
-title Sorozat es film atnevezo - BUILD
+title SubBind - BUILD
 
 if not exist ".venv\Scripts\python.exe" (
     echo Eloszor futtasd a setup.bat fajlt.
@@ -12,12 +12,12 @@ if not exist ".venv\Scripts\python.exe" (
 ".venv\Scripts\python.exe" -m pip install pyinstaller
 if errorlevel 1 goto :err
 
-".venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean --name "SorozatEsFilmAtnevezo" --windowed --paths "src" "src\main.py"
+".venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean --name "SubBind" --windowed --paths "src" "src\main.py"
 if errorlevel 1 goto :err
 
 echo.
 echo BUILD KESZ.
-echo Kimenet: dist\SorozatEsFilmAtnevezo\SorozatEsFilmAtnevezo.exe
+echo Kimenet: dist\SubBind\SubBind.exe
 echo Adatok futtataskor: a program melletti data\ mappa.
 pause
 exit /b 0

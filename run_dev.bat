@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions
 cd /d "%~dp0"
-title Sorozat es film atnevezo - 0.6.1-TEST
+title SubBind - 0.6.1-TEST
 
 if not exist ".venv\Scripts\python.exe" (
     echo A virtualis kornyezet nincs telepitve.
