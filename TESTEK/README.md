@@ -11,6 +11,9 @@ Ez a csomag a jelenlegi `src/main.py` működéséhez igazított, izolált teszt
 - 05_KIJELOLES – kijelölési logika
 - 06_HIBAK_ES_BIZTONSAG – ütközések, helyhiány, megszakítás
 - 07_ELOZMENY – előzmények és visszaállítás
+- 08_GUI_INTEGRACIO – PySide6 GUI-integráció (`GUI_*.py`, 28 fájl)
+- 09_VALOS_FAJLNEVEK – valós fájlnév regresszió (`TEST_70`–`76`)
+- 10_ENGINE_STABILIZALAS – motor, portable/release, History (`TEST_80`–`98`)
 
 A tesztek saját ideiglenes könyvtárat használnak, és nem a valódi médiagyűjteményt módosítják.
 

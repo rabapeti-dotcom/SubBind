@@ -17,11 +17,11 @@ Ezek a fázisnevek maradnak a történeti hivatkozás.
 | L5 | motor státusz/note | lásd tényleges bontás: L2.1 |
 | L6 | `render_template` + B filename strategy | lásd tényleges bontás: L2.4 |
 | L7 | LANGS expansion, külön döntés alapján | **deferred** (2026-08-27) — audit megtörtént; jelenleg nem indokolt; új követelmény nélkül nem implementálható |
-| L8 | teljes regresszió + fizikai GUI | **nincs indítva** — csak megfelelő funkcionális állapot után |
+| L8 | teljes regresszió + fizikai GUI | **nincs lezárva** — L8.4 izoláció (`5c0d3bb`) landolt; teljes fizikai GUI-regresszió nincs completed |
 
 L7 történeti/halasztott fázis marad; a fázis **nincs törölve**.
 L7 csak új, explicit követelmény esetén indulhat.
-L8 csak a megfelelő funkcionális állapot után indul; nincs started és nincs completed.
+L8 teljes fizikai GUI nincs completed; a 0.6.1 RC automatizált Engine/GUI regresszióra épül (`90b41c4`).
 
 ## Tényleges implementációs bontás (L2–L6)
 
@@ -61,15 +61,22 @@ Explicit döntés: L7 a 2026-09-20 release céljához **jelenleg nem indokolt** 
 - Nincs dokumentált release-blokkoló hiány LANGS-bővítésre
 - Parserben ismert, pref-ként nem választható nyelvek: külön kérdés
 
+## 0.6.1 RC (2026-09-16)
+
+Stabil commit: **90b41c4**. Engine 56 PASS / 0 FAIL, GUI 28 PASS / 0 FAIL, `TEST_96` a final RC EXE-n PASS.
+P0 / P1: nincs. P2: `testing.test_runner` a PYZ-ben; frozen Tesztlabor UI rejtve.
+TV2.x kísérleti, nem a 0.6.1 része.
+
+Tervezett felhasználói kiadás: **2026-09-20** (nem a checkpoint dátuma).
+
 ## Következő lépés
 
-L7 deferred; next step: L8 release stabilization planning.
-
-Release cél: **2026-09-20** (változatlan).
+L7 deferred. A 0.6.1 RC artifact (`dist\SorozatEsFilmAtnevezo\`) a `90b41c4` fából kiadható; a projekt-gyökér `data/` nem csomagolandó.
 
 ## Checkpoint
 
 - Version: 0.6.1
+- Stabil commit: 90b41c4
 - Completed: C.1, L1, L2.1, L2.2, L2.3, L2.4
-- L7 deferred; next step: L8 release stabilization planning
-- Release target: 2026-09-20
+- L7 deferred
+- Tervezett kiadás: 2026-09-20

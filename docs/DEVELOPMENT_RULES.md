@@ -50,7 +50,7 @@ Scope creep tilos. Ne implementáljuk a következő L-lépést „már úgysem n
 - Ne találjunk ki hiányzó szabályt.
 - Ne találjunk ki új architektúrát a meglévő kód vizsgálata nélkül.
 - Ne írjunk át működést, ha a fázis nem azt kéri.
-- Ismert, független FAIL-t ne javítsunk másik fázisban (jelenleg: TEST_77, GUI_16).
+- Ismert, független FAIL-t ne javítsunk másik fázisban.
 - Ne hozzunk létre második helper-t ugyanarra a preferred-plain feltételre.
 - LANGS-bővítés (L7) és teljes fizikai GUI-regresszió (L8) csak külön, explicit döntés után.
 - Ne emeljük a verziót, ha a fázis nem kéri (L1–L2.4: 0.6.1 maradt).
@@ -64,8 +64,8 @@ Ne találjunk ki hiányzó viselkedést. Kérdezz, vagy zárd a fázist auditál
 
 - Új viselkedéshez célzott teszt (engine és/vagy GUI, a fázis szerint).
 - Tesztek ideiglenes könyvtárban dolgozzanak; ne használjanak valódi felhasználói fájlokat.
-- A destination/test-isolation FAIL (TEST_77, GUI_16) ismert; ne keverjük L2 regresszióval.
-- Teljes L8 regresszió + fizikai GUI csak a funkcionális állapot után.
+- A destination/test-isolation FAIL (`TEST_77`, `GUI_16`) a 2026-08-26-os auditban ismert volt; izoláció után **PASS**. Ne keverjük L2 regresszióval.
+- Teljes L8 fizikai GUI nincs lezárva; a 0.6.1 RC automatizált Engine/GUI regresszióra épül.
 
 ## Git
 
@@ -77,6 +77,7 @@ Ne találjunk ki hiányzó viselkedést. Kérdezz, vagy zárd a fázist auditál
 ## Checkpoint
 
 - Version: 0.6.1
+- Stabil commit: 90b41c4
 - Completed: L1, L2.1, L2.2, L2.3, L2.4
-- Next decision: L7
-- Release target: 2026-09-20
+- L7 deferred
+- Tervezett kiadás: 2026-09-20

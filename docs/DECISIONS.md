@@ -64,7 +64,7 @@ Explicit projekt-döntés az L7 előkészítő audit után. A korábbi L1–L2.4
 - RU továbbra sem támogatott.
 - Nincs dokumentált release-blokkoló hiány, amely LANGS-bővítést igényelne.
 - A parser által már ismert, de preference-ként nem választható nyelvek (`fr`, `it`, `pl`, `cs`, `sk`, `ro`) **külön kérdés**, nem L7-feladat most.
-- TEST_77 / GUI_16 továbbra is ismert, független destination/test-isolation FAIL.
+- TEST_77 / GUI_16 a 2026-08-27-es L7 audit idején ismert destination/test-isolation FAIL volt. Az izoláció (`3369084`) után **PASS**; lásd a 2026-09-16-os megjegyzést.
 
 ### Fázis-határok (elfogadott munkarend)
 
@@ -74,7 +74,7 @@ Explicit projekt-döntés az L7 előkészítő audit után. A korábbi L1–L2.4
 - L2.2 csak C.1 primary.
 - L2.3 csak `_checkbox_changed()` + `rename()` kapu; új helper tilos, a meglévő `is_preferred_plain_sub` használandó.
 - L2.4 csak B filename strategy.
-- Ismert, független FAIL-t (TEST_77, GUI_16) ne javítsunk másik fázisban.
+- Ismert, független FAIL-t ne javítsunk másik fázisban (történeti példa: TEST_77, GUI_16 az izoláció előtt).
 
 ## Implementációs következtetések (nem döntések)
 
@@ -86,12 +86,23 @@ Ezek Cursor/audit megfigyelések a kódból. Új szabályt **ne** vezessünk le 
 - L2.1 után `set_subtitle_pref()` meglévő listán újra `analyze()`-t futtat.
 - C.1 primary a GUI-ban `is_ui_primary_sub` / `subtitle_pref` szerint.
 - L2.4: `NamingContext.subtitle_pref` + `render_template(..., subtitle_pref=...)`; `analyze()` átadja a prefet.
-- TEST_77 / GUI_16 FAIL oka az audit szerint: célmappa ütközés (`G:/filmekujmappa/Murderbot.S01E01.srt` már létezett), nem L2 logikai hiba.
+- TEST_77 / GUI_16 2026-08-26-os FAIL oka az akkori audit szerint: célmappa ütközés (`G:/filmekujmappa/Murderbot.S01E01.srt` már létezett), nem L2 logikai hiba. Izoláció után (2026-09-16): PASS.
 - A WelcomeDialog és a jobb felső HU/EN zászló L1-ben nem változott.
+
+### 0.6.1 RC checkpoint (2026-09-16)
+
+Nem L7-döntés; a stabil `main` állapota.
+
+- Stabil commit: **90b41c4**. Verzió 0.6.1.
+- Engine 56 PASS / 0 FAIL; GUI 28 PASS / 0 FAIL; `TEST_96` a final RC EXE-n PASS.
+- P0/P1: nincs. P2: `testing.test_runner` a PYZ-ben; frozen Tesztlabor UI rejtve.
+- TV2.x (`src/i18n.py`, `src/ui_theme.py`) kísérleti, nem a 0.6.1 része.
+- Tervezett felhasználói kiadás: 2026-09-20.
 
 ## Checkpoint
 
 - Version: 0.6.1
+- Stabil commit: 90b41c4
 - Completed: C.1, L1, L2.1, L2.2, L2.3, L2.4
-- L7 deferred; next step: L8 release stabilization planning
-- Release target: 2026-09-20
+- L7 deferred
+- Tervezett kiadás: 2026-09-20

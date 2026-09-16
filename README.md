@@ -13,6 +13,7 @@ Az alapfunkciókhoz nincs szükség internetre. A program nem írja át a fájlo
 A beállítások és az előzmény a program melletti `data` mappába kerülnek (`settings.json`, `history.json`). A mappa a géppel együtt mozgatható.
 
 Kimeneti exe build: `build_exe.bat` → `dist\SorozatEsFilmAtnevezo\`.
+A kiadott csomag az exe és a `_internal` mappa. A projekt gyökér `data` mappája fejlesztői; ne tedd a felhasználói zipbe. Első indításkor a program a saját `data` mappáját hozza létre az exe mellett.
 
 ## Fejlesztői futtatás
 
