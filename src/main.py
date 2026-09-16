@@ -2175,6 +2175,13 @@ class MainWindow(QMainWindow):
             for item in self.items
         )
 
+    def _rename_output_ok(self):
+        """A Rename gomb másolásnál kimeneti mappát igényel; helyben nem."""
+        return (
+            self.output_mode == "Helyben átnevezés"
+            or bool(str(getattr(self, "output_dir", "") or "").strip())
+        )
+
     def _is_busy(self):
         if getattr(self, "_rename_busy", False) or getattr(self, "cancel_requested", False):
             return True
@@ -2206,7 +2213,7 @@ class MainWindow(QMainWindow):
             return "added"
         if issues or blocked:
             return "review"
-        if self._has_processable_ok():
+        if self._has_processable_ok() and self._rename_output_ok():
             return "ready"
         return "preview"
 
@@ -2279,10 +2286,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "cancel_btn"):
             self.cancel_btn.setVisible(busy or self.cancel_btn.isEnabled())
 
-        copy_ok = (
-            self.output_mode == "Helyben átnevezés"
-            or bool(str(getattr(self, "output_dir", "") or "").strip())
-        )
+        copy_ok = self._rename_output_ok()
         can_rename = (not empty) and (not busy) and self._has_processable_ok() and copy_ok
         if hasattr(self, "rename_btn"):
             self.rename_btn.setEnabled(can_rename)
