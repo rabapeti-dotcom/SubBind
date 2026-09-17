@@ -110,6 +110,30 @@ class TestGui23SubtitlePrefSetting(unittest.TestCase):
         self.assertEqual(win.subtitle_pref, "hu")
         self.assertEqual(combo_id(win.subtitle_pref_combo), "hu")
 
+    def test_advanced_options_always_visible_with_legacy_flag(self):
+        self._write_settings(advanced_mode=False)
+        win = self._open()
+        win.tabs.setCurrentIndex(1)
+        APP.processEvents()
+        self.assertEqual(win.tabs.tabText(1), t("tab.settings"))
+        self.assertFalse(win.advanced_box.isCheckable())
+        for widget in (
+            win.normalize_cb, win.lang_norm_cb, win.subdirs_cb,
+            win.conflicts_cb, win.preserve_cb, win.adv_vars_label,
+        ):
+            self.assertTrue(widget.isVisible(), widget.objectName() or widget.__class__.__name__)
+        self._write_settings(advanced_mode=True)
+        win = self._open()
+        win.tabs.setCurrentIndex(1)
+        APP.processEvents()
+        self.assertTrue(win.normalize_cb.isVisible())
+        self.assertTrue(win.conflicts_cb.isVisible())
+        win.save_settings(silent=True)
+        raw = json.loads((self.data_dir / "settings.json").read_text(encoding="utf-8"))
+        self.assertNotIn("advanced_mode", raw)
+        self.assertIn("normalize", raw)
+        self.assertIn("subtitle_pref", raw)
+
     def test_03_de_saves_and_reloads(self):
         win = self._open()
         win.set_subtitle_pref("de")

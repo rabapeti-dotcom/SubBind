@@ -4,17 +4,17 @@ Visual only. No engine, pairing, rename, or settings logic.
 """
 
 LIGHT = {
-    "chrome": "#c5ceda",
-    "window": "#f4f6f9",
+    "chrome": "#b7c2d0",
+    "window": "#eef2f7",
     "surface": "#ffffff",
-    "surface_alt": "#eef1f5",
+    "surface_alt": "#e6edf4",
     "raised": "#ffffff",
-    "sunken": "#e6eaef",
-    "border": "#b4bcc8",
-    "border_strong": "#7d8a9a",
-    "text": "#152033",
-    "text_secondary": "#3f4b5c",
-    "text_muted": "#5c6675",
+    "sunken": "#d5dde6",
+    "border": "#8a97a8",
+    "border_strong": "#5d6d80",
+    "text": "#121c2b",
+    "text_secondary": "#3a4658",
+    "text_muted": "#5a6573",
     "accent": "#1a5fd4",
     "accent_hover": "#144db0",
     "accent_fill": "#1a5fd4",
@@ -32,14 +32,14 @@ LIGHT = {
     "danger_soft": "#fbeaea",
     "selected": "#d4e4fb",
     "hover": "#e7edf5",
-    "row_line": "#e4e9ef",
+    "row_line": "#d7dee6",
     "row_ok": "#e8f6ee",
     "row_review": "#fff7e6",
     "row_blocked": "#fbecee",
     "handle": "#8b97a8",
     "handle_hover": "#6d7a8c",
     "white": "#ffffff",
-    "window_rim": "#4a5a70",
+    "window_rim": "#3f5168",
     "field": "#ffffff",
     "overlay": "#ffffff",
 }
@@ -105,9 +105,10 @@ def copy_state_colors(tok):
 
 
 def _fill(template, tok):
+    """Replace $tokens. Longer names first so $window_rim is not eaten by $window."""
     out = template
-    for key, value in tok.items():
-        out = out.replace("$" + key, value)
+    for key in sorted(tok, key=len, reverse=True):
+        out = out.replace("$" + key, tok[key])
     return out
 
 
@@ -821,34 +822,63 @@ QPushButton#btnPrimary:hover {
     color: $white;
 }
 QTabBar::tab {
-    color: $text_secondary;
-    background-color: $sunken;
+    color: $text;
+    background-color: $surface_alt;
+    border: 1px solid $border_strong;
+    border-bottom: none;
 }
 QTabBar::tab:selected {
     color: $text;
     background-color: $surface;
+    border: 1px solid $border_strong;
+    border-bottom: 2px solid $accent;
+    font-weight: 600;
+}
+QTabWidget::pane {
+    border: 1px solid $border_strong;
 }
 QHeaderView::section {
-    color: $text_secondary;
-    background-color: $sunken;
+    color: $text;
+    background-color: $surface_alt;
+    border: 1px solid $border_strong;
 }
 QToolTip {
-    background-color: $surface;
+    background-color: $chrome;
+    color: $text;
+    border: 1px solid $window_rim;
+}
+QLineEdit, QTextEdit, QLineEdit#searchField {
+    background-color: $field;
     color: $text;
     border: 1px solid $border_strong;
 }
-QLineEdit, QTextEdit, QLineEdit#searchField {
+QLineEdit:disabled, QTextEdit:disabled, QLineEdit#searchField:disabled,
+QComboBox:disabled {
     background-color: $sunken;
-    color: $text;
+    color: $text_muted;
     border: 1px solid $border;
 }
 QComboBox {
-    background-color: $surface;
+    background-color: $field;
     color: $text;
+    border: 1px solid $border_strong;
 }
 QComboBox QAbstractItemView {
     background-color: $surface;
     color: $text;
+    border: 1px solid $border_strong;
+}
+QGroupBox {
+    border: 1px solid $border_strong;
+}
+QTableWidget, QTableView {
+    border: 1px solid $border_strong;
+}
+QFrame#toolbarCluster {
+    border: 1px solid $border_strong;
+}
+QFrame#renameFrame {
+    border: 1px solid $border_strong;
 }
 """
 

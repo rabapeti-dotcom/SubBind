@@ -138,7 +138,7 @@ _HU = {
     "btn.cancel": "⛔  Feladat megszakítása",
     "btn.cancel_busy": "⛔  Megszakítás folyamatban…",
     "tab.files": "Fájlok",
-    "tab.settings": "Sablon és beállítások",
+    "tab.settings": "Haladó beállítások",
     "settings.intro": (
         "A napi használathoz elég a Fájlok fül. Itt a névsablon és a ritkábban "
         "használt beállítások találhatók — ezeket csak akkor kell módosítani, "
@@ -293,12 +293,6 @@ _HU = {
     "pref.tip": (
         "A feliratoknál előnyben részesített nyelv. "
         "Független a program nyelvétől (magyar / angol)."
-    ),
-    "adv.box": "Haladó beállítások",
-    "adv.mode": "Haladó mód",
-    "adv.mode_tip": (
-        "További, ritkán használt beállítások. "
-        "A mindennapi használathoz nem szükségesek."
     ),
     "adv.normalize": "Fájlnév normalizálása",
     "adv.lang_norm": "Feliratnevek normalizálása",
@@ -756,7 +750,7 @@ _EN = {
     "btn.cancel": "⛔  Cancel task",
     "btn.cancel_busy": "⛔  Cancelling…",
     "tab.files": "Files",
-    "tab.settings": "Template and settings",
+    "tab.settings": "Advanced settings",
     "settings.intro": (
         "Everyday use only needs the Files tab. Name templates and less-used "
         "options live here — change them only when the defaults are not enough."
@@ -907,12 +901,6 @@ _EN = {
     "pref.tip": (
         "Preferred language for subtitles. "
         "Independent of the program language (Hungarian / English)."
-    ),
-    "adv.box": "Advanced settings",
-    "adv.mode": "Advanced mode",
-    "adv.mode_tip": (
-        "Optional extra settings. "
-        "Everyday use does not require them."
     ),
     "adv.normalize": "Normalize file names",
     "adv.lang_norm": "Normalize subtitle names",

@@ -1034,6 +1034,7 @@ class MainWindow(QMainWindow):
         self.output_dir = config.get("output_dir", "")
         self.appearance = config.get("appearance", "Világos")
         if "advanced_mode" in config:
+            # Régi settings kulcs: ne okozzon hibát; a UI-t nem vezérli.
             self.advanced_mode = bool(config.get("advanced_mode"))
 
         modes = {"Automatikus / Vegyes", "Sorozat", "Film"}
@@ -1234,6 +1235,7 @@ class MainWindow(QMainWindow):
         self.build_settings()
         self.build_preview()
         self.build_history()
+        self.tabs.currentChanged.connect(self._on_main_tab_changed)
 
         footer = QFrame()
         footer.setObjectName("footerBar")
@@ -1474,12 +1476,12 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(10)
 
-        self.settings_intro = QLabel()
+        self.settings_intro = QLabel(t("settings.intro"))
         self.settings_intro.setObjectName("settingsIntro")
         self.settings_intro.setWordWrap(True)
         layout.addWidget(self.settings_intro)
 
-        self.naming_heading = QLabel()
+        self.naming_heading = QLabel(t("settings.naming_box"))
         self.naming_heading.setObjectName("sectionHeading")
         layout.addWidget(self.naming_heading)
 
@@ -1494,8 +1496,7 @@ class MainWindow(QMainWindow):
         grid.addWidget(self.mode_label, 0, 0)
 
         self.mode_combo = QComboBox()
-        for ident in MODE_IDS:
-            self.mode_combo.addItem(ident, ident)
+        fill_combo(self.mode_combo, MODE_IDS, MODE_KEYS)
         set_combo_id(self.mode_combo, self.mode_value)
         self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
         grid.addWidget(self.mode_combo, 0, 1)
@@ -1550,10 +1551,9 @@ class MainWindow(QMainWindow):
         self.subtitle_pref_combo.currentIndexChanged.connect(self._on_subtitle_pref_changed)
         grid.addWidget(self.subtitle_pref_combo, 5, 1)
 
-        self.advanced_box = QGroupBox(t("adv.mode"))
-        self.advanced_box.setCheckable(True)
+        self.advanced_box = QGroupBox()
+        self.advanced_box.setCheckable(False)
         self.advanced_box.setFlat(False)
-        self.advanced_box.setToolTip(t("adv.mode_tip"))
         adv_layout = QVBoxLayout(self.advanced_box)
 
         self.normalize_cb = QCheckBox(t("adv.normalize"))
@@ -1577,11 +1577,6 @@ class MainWindow(QMainWindow):
         self.adv_vars_label.setObjectName("mutedLabel")
         adv_layout.addWidget(self.adv_vars_label)
         grid.addWidget(self.advanced_box, 6, 0, 1, 2)
-        self.advanced_box.blockSignals(True)
-        self.advanced_box.setChecked(bool(self.advanced_mode))
-        self.advanced_box.blockSignals(False)
-        self.advanced_box.toggled.connect(self._on_advanced_mode_toggled)
-        self._apply_advanced_visibility(bool(self.advanced_mode))
 
         button_row = QHBoxLayout()
         self.save_settings_btn = QPushButton(t("btn.save_settings"))
@@ -1601,38 +1596,6 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(left)
         layout.addStretch(1)
-
-    def _advanced_inner_widgets(self):
-        return (
-            self.normalize_cb, self.lang_norm_cb, self.subdirs_cb,
-            self.conflicts_cb, self.preserve_cb, self.adv_vars_label,
-        )
-
-    def _apply_advanced_visibility(self, on):
-        on = bool(on)
-        for widget in self._advanced_inner_widgets():
-            widget.setVisible(on)
-        layout = self.advanced_box.layout()
-        if layout is not None:
-            if on:
-                layout.setContentsMargins(9, 9, 9, 9)
-                layout.setSpacing(6)
-            else:
-                layout.setContentsMargins(0, 0, 0, 0)
-                layout.setSpacing(0)
-        if on:
-            self.advanced_box.setMaximumHeight(16777215)
-        else:
-            title_h = self.advanced_box.fontMetrics().height() + 18
-            self.advanced_box.setMaximumHeight(title_h)
-        self.advanced_box.updateGeometry()
-        if hasattr(self, "settings_tab"):
-            self.settings_tab.updateGeometry()
-
-    def _on_advanced_mode_toggled(self, on):
-        self.advanced_mode = bool(on)
-        self._apply_advanced_visibility(self.advanced_mode)
-        self.save_settings(silent=True)
 
     def build_preview(self):
         layout = QVBoxLayout(self.preview_tab)
@@ -4268,7 +4231,10 @@ class MainWindow(QMainWindow):
                     continue
                 widget.setText(text)
                 widest = max(widest, widget.sizeHint().width())
-        widget.setText(original)
+        if keys:
+            widget.setText(t(keys[0]))
+        else:
+            widget.setText(original)
         width = max(widest, previous_min)
         if isinstance(widget, QPushButton):
             widget.setFixedWidth(width)
@@ -4437,6 +4403,60 @@ class MainWindow(QMainWindow):
         if label is not None:
             label.setText(text)
 
+    def _on_main_tab_changed(self, index):
+        if getattr(self, "settings_tab", None) is self.tabs.widget(index):
+            self._apply_settings_tab_language()
+
+    def _apply_settings_tab_language(self):
+        """Haladó beállítások fül: mindig az aktív nyelv látható szövegei.
+
+        A QTabWidget rejtett oldala Windowson nem mindig veszi a setText-et;
+        ezért nyelvváltáskor és a fül előhozásakor is újra kell tölteni.
+        """
+        if not hasattr(self, "mode_combo"):
+            return
+        if hasattr(self, "settings_intro"):
+            self.settings_intro.setText(t("settings.intro"))
+        if hasattr(self, "naming_heading"):
+            self.naming_heading.setText(t("settings.naming_box"))
+        self.mode_label.setText(t("mode.label"))
+        fill_combo(self.mode_combo, MODE_IDS, MODE_KEYS)
+        self.detected_box.setTitle(t("detect.box"))
+        if not self.items:
+            self.detected_series_label.setText(t("detect.none"))
+        self.template_label.setText(t("template.label"))
+        self.subtitle_pref_label.setText(t("pref.label"))
+        self.subtitle_pref_label.setToolTip(t("pref.tip"))
+        self.subtitle_pref_combo.setToolTip(t("pref.tip"))
+        fill_combo(self.subtitle_pref_combo, SUBTITLE_PREF_CHOICES, SUBTITLE_PREF_KEYS)
+        self.subtitle_pref_combo.blockSignals(True)
+        set_combo_id(self.subtitle_pref_combo, self.subtitle_pref)
+        self.subtitle_pref_combo.blockSignals(False)
+        self.normalize_cb.setText(t("adv.normalize"))
+        self.lang_norm_cb.setText(t("adv.lang_norm"))
+        self.subdirs_cb.setText(t("adv.subdirs"))
+        self.conflicts_cb.setText(t("adv.conflicts"))
+        self.preserve_cb.setText(t("adv.preserve"))
+        self.adv_vars_label.setText(t("adv.vars"))
+        self.save_settings_btn.setText(t("btn.save_settings"))
+        self.refresh_list_btn.setText(t("btn.refresh_list"))
+        self.refresh_list_btn.setToolTip(t("tip.refresh_list"))
+        self.reset_settings_btn.setText(t("btn.reset_settings"))
+        film_only = self.mode_value == "Film"
+        mixed = self.mode_value == "Automatikus / Vegyes"
+        if film_only:
+            self.name_label.setText(t("name.movie"))
+            self.base_vars_label.setText(t("vars.base"))
+            self.default_template_label.setText(t("tpl.movie"))
+        elif mixed:
+            self.name_label.setText(t("name.mixed"))
+            self.base_vars_label.setText(t("vars.series"))
+            self.default_template_label.setText(t("tpl.mixed"))
+        else:
+            self.name_label.setText(t("name.series"))
+            self.base_vars_label.setText(t("vars.base"))
+            self.default_template_label.setText(t("tpl.series"))
+
     def apply_ui_language(self):
         """Reload visible widget text from the active language table."""
         self.setWindowTitle(t("win.title", name=APP_NAME, version=APP_VERSION))
@@ -4485,10 +4505,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "footer_badge"):
             self.footer_badge.setText(t("footer.test_version"))
             self.footer_badge.setVisible(show_test_version_mark())
-        if hasattr(self, "settings_intro"):
-            self.settings_intro.setText(t("settings.intro"))
-        if hasattr(self, "naming_heading"):
-            self.naming_heading.setText(t("settings.naming_box"))
+        self._apply_settings_tab_language()
         if hasattr(self, "cancel_btn"):
             busy = self.cancel_btn.isEnabled() and getattr(self, "cancel_requested", False)
             self.cancel_btn.setText(t("btn.cancel_busy" if busy else "btn.cancel"))
@@ -4516,32 +4533,6 @@ class MainWindow(QMainWindow):
             self.output_browse_btn.setText(t("output.browse"))
             self.table.setHorizontalHeaderLabels(self._table_headers())
             self.table.horizontalHeader().setToolTip(t("tip.table_check"))
-        if hasattr(self, "mode_combo"):
-            self.mode_label.setText(t("mode.label"))
-            fill_combo(self.mode_combo, MODE_IDS, MODE_KEYS)
-            self.detected_box.setTitle(t("detect.box"))
-            if not self.items:
-                self.detected_series_label.setText(t("detect.none"))
-            self.template_label.setText(t("template.label"))
-            self.subtitle_pref_label.setText(t("pref.label"))
-            self.subtitle_pref_label.setToolTip(t("pref.tip"))
-            self.subtitle_pref_combo.setToolTip(t("pref.tip"))
-            fill_combo(self.subtitle_pref_combo, SUBTITLE_PREF_CHOICES, SUBTITLE_PREF_KEYS)
-            self.subtitle_pref_combo.blockSignals(True)
-            set_combo_id(self.subtitle_pref_combo, self.subtitle_pref)
-            self.subtitle_pref_combo.blockSignals(False)
-            self.advanced_box.setTitle(t("adv.mode"))
-            self.advanced_box.setToolTip(t("adv.mode_tip"))
-            self.normalize_cb.setText(t("adv.normalize"))
-            self.lang_norm_cb.setText(t("adv.lang_norm"))
-            self.subdirs_cb.setText(t("adv.subdirs"))
-            self.conflicts_cb.setText(t("adv.conflicts"))
-            self.preserve_cb.setText(t("adv.preserve"))
-            self.adv_vars_label.setText(t("adv.vars"))
-            self.save_settings_btn.setText(t("btn.save_settings"))
-            self.refresh_list_btn.setText(t("btn.refresh_list"))
-            self.refresh_list_btn.setToolTip(t("tip.refresh_list"))
-            self.reset_settings_btn.setText(t("btn.reset_settings"))
         if hasattr(self, "select_all_btn"):
             self.select_all_btn.setText(t("preview.select_all"))
             self.select_none_btn.setText(t("preview.select_none"))
@@ -4562,22 +4553,6 @@ class MainWindow(QMainWindow):
             self.update_history_view()
         if hasattr(self, "output_mode_combo"):
             self.on_output_mode_changed()
-        if hasattr(self, "mode_combo"):
-            # Labels only; do not rewrite the template on a language switch.
-            film_only = self.mode_value == "Film"
-            mixed = self.mode_value == "Automatikus / Vegyes"
-            if film_only:
-                self.name_label.setText(t("name.movie"))
-                self.base_vars_label.setText(t("vars.base"))
-                self.default_template_label.setText(t("tpl.movie"))
-            elif mixed:
-                self.name_label.setText(t("name.mixed"))
-                self.base_vars_label.setText(t("vars.series"))
-                self.default_template_label.setText(t("tpl.mixed"))
-            else:
-                self.name_label.setText(t("name.series"))
-                self.base_vars_label.setText(t("vars.base"))
-                self.default_template_label.setText(t("tpl.series"))
         if hasattr(self, "table"):
             self.refresh(reanalyze=False)
         else:
@@ -4626,7 +4601,6 @@ class MainWindow(QMainWindow):
             "output_mode": self.output_mode,
             "output_dir": self.output_dir,
             "appearance": self.appearance,
-            "advanced_mode": bool(getattr(self, "advanced_mode", False)),
             "version": APP_VERSION
         }
 

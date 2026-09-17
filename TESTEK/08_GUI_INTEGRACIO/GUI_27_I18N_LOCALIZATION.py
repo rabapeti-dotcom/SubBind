@@ -113,34 +113,53 @@ class TestGui27I18nLocalization(unittest.TestCase):
         APP.processEvents()
         self.assertEqual(self.win.help_btn.text(), t("btn.help"))
         self.assertEqual(self.win.tabs.tabText(0), t("tab.files"))
+        self.assertEqual(self.win.tabs.tabText(1), t("tab.settings"))
+        self.assertEqual(self.win.tabs.tabText(1), "Haladó beállítások")
         self.assertEqual(self.win.rename_btn.text(), t("btn.rename"))
-        self.assertEqual(self.win.advanced_box.title(), t("adv.mode"))
+        self.win.tabs.setCurrentIndex(1)
+        APP.processEvents()
+        self.assertTrue(self.win.normalize_cb.isVisible())
+        self.assertTrue(self.win.lang_norm_cb.isVisible())
+        self.assertTrue(self.win.subdirs_cb.isVisible())
+        self.assertTrue(self.win.conflicts_cb.isVisible())
+        self.assertTrue(self.win.preserve_cb.isVisible())
+        self.assertTrue(self.win.adv_vars_label.isVisible())
         self.assertEqual(self.win.hist_undo_btn.text(), t("hist.undo"))
 
         self.win.set_language("en")
         APP.processEvents()
         self.assertEqual(self.win.help_btn.text(), "Help ▾")
         self.assertEqual(self.win.tabs.tabText(0), "Files")
-        self.assertEqual(self.win.tabs.tabText(1), "Template and settings")
+        self.assertEqual(self.win.tabs.tabText(1), "Advanced settings")
         self.assertEqual(self.win.tabs.tabText(2), "Preview")
         self.assertEqual(self.win.tabs.tabText(3), "History")
         self.assertEqual(self.win.rename_btn.text(), "Rename")
         self.assertEqual(self.win.check_btn.text(), "Check")
         self.assertEqual(self.win.refresh_preview_btn.text(), "Refresh preview")
-        self.assertEqual(self.win.advanced_box.title(), "Advanced mode")
+        self.win.tabs.setCurrentIndex(1)
+        APP.processEvents()
+        self.assertTrue(self.win.normalize_cb.isVisible())
+        self.assertEqual(self.win.normalize_cb.text(), "Normalize file names")
         self.assertEqual(self.win.output_folder_label.text(), "Output folder:")
         self.assertEqual(self.win.subtitle_pref_label.text(), "Preferred subtitle language:")
         self.assertEqual(self.win.select_missing_btn.text(), "Missing only")
         self.assertEqual(self.win.hist_undo_btn.text(), "Undo selected operation")
         self.assertIn("Previous operations", self.win.history_info.text())
         self.assertNotIn("Súgó", self.win.help_btn.text())
-        self.assertNotIn("Haladó", self.win.advanced_box.title())
+        self.assertNotIn("Haladó mód", self.win.tabs.tabText(1))
 
         self.win.set_language("hu")
         APP.processEvents()
         self.assertEqual(self.win.help_btn.text(), "Súgó ▾")
-        self.assertEqual(self.win.advanced_box.title(), "Haladó mód")
+        self.assertEqual(self.win.tabs.tabText(1), "Haladó beállítások")
+        self.win.tabs.setCurrentIndex(1)
+        APP.processEvents()
+        self.assertTrue(self.win.normalize_cb.isVisible())
         self.assertEqual(self.win.rename_btn.text(), "Átnevezés")
+        self.assertEqual(self.win.naming_heading.text(), "Névadás")
+        self.assertEqual(self.win.mode_label.text(), "Mód:")
+        self.assertEqual(self.win.normalize_cb.text(), "Fájlnév normalizálása")
+        self.assertNotEqual(self.win.normalize_cb.text(), "Normalize file names")
 
     def test_04_help_keys_match_app_version(self):
         set_active_language("en")
@@ -174,6 +193,120 @@ class TestGui27I18nLocalization(unittest.TestCase):
         self.assertFalse(self.win._rename_output_ok())
         self.win.output_mode = "Helyben átnevezés"
         self.assertTrue(self.win._rename_output_ok())
+
+    def _settings_tab_snapshot(self):
+        self.win.tabs.setCurrentIndex(1)
+        APP.processEvents()
+        return {
+            "tab": self.win.tabs.tabText(1),
+            "intro": self.win.settings_intro.text(),
+            "heading": self.win.naming_heading.text(),
+            "mode": self.win.mode_label.text(),
+            "mode_items": tuple(
+                self.win.mode_combo.itemText(i)
+                for i in range(self.win.mode_combo.count())
+            ),
+            "name": self.win.name_label.text(),
+            "template": self.win.template_label.text(),
+            "vars": self.win.base_vars_label.text(),
+            "tpl": self.win.default_template_label.text(),
+            "pref": self.win.subtitle_pref_label.text(),
+            "pref_items": tuple(
+                self.win.subtitle_pref_combo.itemText(i)
+                for i in range(self.win.subtitle_pref_combo.count())
+            ),
+            "normalize": self.win.normalize_cb.text(),
+            "lang_norm": self.win.lang_norm_cb.text(),
+            "subdirs": self.win.subdirs_cb.text(),
+            "conflicts": self.win.conflicts_cb.text(),
+            "preserve": self.win.preserve_cb.text(),
+            "adv_vars": self.win.adv_vars_label.text(),
+            "save": self.win.save_settings_btn.text(),
+            "refresh": self.win.refresh_list_btn.text(),
+            "reset": self.win.reset_settings_btn.text(),
+        }
+
+    def test_07_advanced_settings_tab_visible_language(self):
+        """HU/EN a Haladó beállítások fül LÁTHATÓ szövegein, nem csak kulcsokon."""
+        en_forbidden = (
+            "Naming",
+            "Mode:",
+            "Series name:",
+            "Desired name template:",
+            "Basic variables:",
+            "Default series template:",
+            "Preferred subtitle language:",
+            "Normalize file names",
+            "Normalize subtitle names",
+            "Include subfolders",
+            "Check name conflicts in advance",
+            "Keep selections",
+            "Advanced template variables",
+            "Save settings",
+            "Refresh list",
+            "Reset settings",
+            "Automatic / Mixed",
+        )
+
+        self.win.set_language("en")
+        APP.processEvents()
+        en = self._settings_tab_snapshot()
+        self.assertEqual(en["tab"], "Advanced settings")
+        self.assertEqual(en["heading"], "Naming")
+        self.assertEqual(en["mode"], "Mode:")
+        self.assertEqual(en["mode_items"], ("Automatic / Mixed", "Series", "Movie"))
+        self.assertEqual(en["name"], "Series name:")
+        self.assertEqual(en["template"], "Desired name template:")
+        self.assertEqual(en["vars"], "Basic variables:")
+        self.assertEqual(en["tpl"], "Default series template: {CIM}.{SZEZON}{EPIZOD}")
+        self.assertEqual(en["pref"], "Preferred subtitle language:")
+        self.assertEqual(en["pref_items"], ("Hungarian", "German", "English", "Spanish"))
+        self.assertEqual(en["normalize"], "Normalize file names")
+        self.assertEqual(en["lang_norm"], "Normalize subtitle names")
+        self.assertEqual(en["subdirs"], "Include subfolders")
+        self.assertEqual(en["conflicts"], "Check name conflicts in advance")
+        self.assertEqual(en["preserve"], "Keep selections")
+        self.assertEqual(en["adv_vars"], "Advanced template variables: {NYELV}, {KITERJ}, {EP}, {EXT}")
+        self.assertEqual(en["save"], "Save settings")
+        self.assertEqual(en["refresh"], "Refresh list")
+        self.assertEqual(en["reset"], "Reset settings")
+
+        self.win.tabs.setCurrentIndex(0)
+        APP.processEvents()
+        self.win.set_language("hu")
+        APP.processEvents()
+        self.assertEqual(self.win.tabs.tabText(1), "Haladó beállítások")
+        hu = self._settings_tab_snapshot()
+        self.assertEqual(hu["tab"], "Haladó beállítások")
+        self.assertEqual(hu["heading"], "Névadás")
+        self.assertEqual(hu["mode"], "Mód:")
+        self.assertEqual(hu["mode_items"], ("Automatikus / Vegyes", "Sorozat", "Film"))
+        self.assertEqual(hu["name"], "Sorozat neve:")
+        self.assertEqual(hu["template"], "Kívánt név sablon:")
+        self.assertEqual(hu["vars"], "Alap változók:")
+        self.assertEqual(hu["tpl"], "Alapértelmezett sorozatsablon: {CIM}.{SZEZON}{EPIZOD}")
+        self.assertEqual(hu["pref"], "Preferált felirat nyelve:")
+        self.assertEqual(hu["pref_items"], ("Magyar", "Német", "Angol", "Spanyol"))
+        self.assertEqual(hu["normalize"], "Fájlnév normalizálása")
+        self.assertEqual(hu["lang_norm"], "Feliratnevek normalizálása")
+        self.assertEqual(hu["subdirs"], "Almappák bevonása")
+        self.assertEqual(hu["conflicts"], "Névütközések előzetes ellenőrzése")
+        self.assertEqual(hu["preserve"], "Kijelölések megőrzése")
+        self.assertEqual(hu["adv_vars"], "Haladó sablonváltozók: {NYELV}, {KITERJ}, {EP}, {EXT}")
+        self.assertEqual(hu["save"], "Beállítások mentése")
+        self.assertEqual(hu["refresh"], "Lista frissítése")
+        self.assertEqual(hu["reset"], "Beállítások visszaállítása")
+        blob = "\n".join(str(v) for v in hu.values())
+        for marker in en_forbidden:
+            self.assertNotIn(marker, blob, marker)
+        self.assertIn("napi használathoz", hu["intro"])
+
+        self.win.set_language("en")
+        APP.processEvents()
+        en2 = self._settings_tab_snapshot()
+        self.assertEqual(en2["heading"], "Naming")
+        self.assertEqual(en2["normalize"], "Normalize file names")
+        self.assertEqual(en2["mode_items"], ("Automatic / Mixed", "Series", "Movie"))
 
 
 def tearDownModule():
