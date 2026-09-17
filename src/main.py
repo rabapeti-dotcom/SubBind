@@ -65,6 +65,12 @@ COL_TYPE = 7
 COL_SIZE = 8
 COL_PROGRESS = 9
 TABLE_COLS = 10
+# Gombfelirat i18n; a beszúrt token a dict kulcsa, változatlan.
+TOKEN_BUTTON_KEYS = {
+    "{CIM}": ("var.cim", "var.cim_tip"),
+    "{SZEZON}": ("var.szezon", "var.szezon_tip"),
+    "{EPIZOD}": ("var.epizod", "var.epizod_tip"),
+}
 COPY_ACTIVE_STATES = {
     "Másolás...", "Átnevezés...", "Átmásolva", "Kész",
     "Már létezik", "Névütközés", "Nem egyező pár", "Hiba",
@@ -1531,8 +1537,9 @@ class MainWindow(QMainWindow):
         var_layout.setContentsMargins(0, 0, 0, 0)
 
         self.var_buttons = {}
-        for value in ["{CIM}", "{SZEZON}", "{EPIZOD}"]:
-            b = QPushButton(value)
+        for value, (text_key, tip_key) in TOKEN_BUTTON_KEYS.items():
+            b = QPushButton(t(text_key))
+            b.setToolTip(t(tip_key))
             b.clicked.connect(lambda checked=False, x=value: self.insert_var(x))
             var_layout.addWidget(b)
             self.var_buttons[value] = b
@@ -1575,6 +1582,7 @@ class MainWindow(QMainWindow):
 
         self.adv_vars_label = QLabel(t("adv.vars"))
         self.adv_vars_label.setObjectName("mutedLabel")
+        self.adv_vars_label.setWordWrap(True)
         adv_layout.addWidget(self.adv_vars_label)
         grid.addWidget(self.advanced_box, 6, 0, 1, 2)
 
@@ -4327,6 +4335,11 @@ class MainWindow(QMainWindow):
                     max(self.detected_box.sizeHint().width(), detect_need)
                 )
                 self.detected_box._sr_width_frozen = True
+        if hasattr(self, "var_buttons"):
+            for value, (text_key, _tip_key) in TOKEN_BUTTON_KEYS.items():
+                button = self.var_buttons.get(value)
+                if button is not None:
+                    self._freeze_caption_width(button, text_key)
         if hasattr(self, "save_settings_btn"):
             self._freeze_caption_width(self.save_settings_btn, "btn.save_settings")
             self._freeze_caption_width(self.refresh_list_btn, "btn.refresh_list")
@@ -4438,6 +4451,13 @@ class MainWindow(QMainWindow):
         self.conflicts_cb.setText(t("adv.conflicts"))
         self.preserve_cb.setText(t("adv.preserve"))
         self.adv_vars_label.setText(t("adv.vars"))
+        if hasattr(self, "var_buttons"):
+            for value, (text_key, tip_key) in TOKEN_BUTTON_KEYS.items():
+                button = self.var_buttons.get(value)
+                if button is None:
+                    continue
+                button.setText(t(text_key))
+                button.setToolTip(t(tip_key))
         self.save_settings_btn.setText(t("btn.save_settings"))
         self.refresh_list_btn.setText(t("btn.refresh_list"))
         self.refresh_list_btn.setToolTip(t("tip.refresh_list"))

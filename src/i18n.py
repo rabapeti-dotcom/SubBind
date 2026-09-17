@@ -283,6 +283,12 @@ _HU = {
     "template.label": "Kívánt név sablon:",
     "vars.base": "Alap változók:",
     "vars.series": "Sorozatváltozók:",
+    "var.cim": "Cím {CIM}",
+    "var.szezon": "Évad {SZEZON}",
+    "var.epizod": "Epizód {EPIZOD}",
+    "var.cim_tip": "Cím",
+    "var.szezon_tip": "Évad, például S01",
+    "var.epizod_tip": "Epizód, például E01",
     "tpl.series": "Alapértelmezett sorozatsablon: {CIM}.{SZEZON}{EPIZOD}",
     "tpl.movie": "Alapértelmezett filmsablon: {CIM}",
     "tpl.mixed": (
@@ -299,7 +305,10 @@ _HU = {
     "adv.subdirs": "Almappák bevonása",
     "adv.conflicts": "Névütközések előzetes ellenőrzése",
     "adv.preserve": "Kijelölések megőrzése",
-    "adv.vars": "Haladó sablonváltozók: {NYELV}, {KITERJ}, {EP}, {EXT}",
+    "adv.vars": (
+        "Haladó sablonváltozók: felirat nyelve {NYELV}, "
+        "kiterjesztés {KITERJ}, évad+epizód {EP}, kiterjesztés {EXT}"
+    ),
     "btn.save_settings": "Beállítások mentése",
     "btn.refresh_list": "Lista frissítése",
     "tip.refresh_list": "Újraelemzi a listát és újragenerálja a tervezett neveket.",
@@ -420,8 +429,9 @@ _HU = {
         "{SZEZON} – évad, például S01\n"
         "{EPIZOD} – epizód, például E01\n\n"
         "Haladó változók:\n\n"
-        "{EP} – teljes epizódjelölés, például S01E01\n"
         "{NYELV} – felirat nyelve\n"
+        "{KITERJ} – fájlkiterjesztés pont nélkül\n"
+        "{EP} – teljes epizódjelölés, például S01E01\n"
         "{EXT} – fájlkiterjesztés pont nélkül\n\n"
         "A kapcsos zárójelek a sablon szintaxisának részei."
     ),
@@ -891,6 +901,12 @@ _EN = {
     "template.label": "Desired name template:",
     "vars.base": "Basic variables:",
     "vars.series": "Series variables:",
+    "var.cim": "Title {CIM}",
+    "var.szezon": "Season {SZEZON}",
+    "var.epizod": "Episode {EPIZOD}",
+    "var.cim_tip": "Title",
+    "var.szezon_tip": "Season, e.g. S01",
+    "var.epizod_tip": "Episode, e.g. E01",
     "tpl.series": "Default series template: {CIM}.{SZEZON}{EPIZOD}",
     "tpl.movie": "Default movie template: {CIM}",
     "tpl.mixed": (
@@ -907,7 +923,10 @@ _EN = {
     "adv.subdirs": "Include subfolders",
     "adv.conflicts": "Check name conflicts in advance",
     "adv.preserve": "Keep selections",
-    "adv.vars": "Advanced template variables: {NYELV}, {KITERJ}, {EP}, {EXT}",
+    "adv.vars": (
+        "Advanced template variables: subtitle language {NYELV}, "
+        "extension {KITERJ}, season+episode {EP}, extension {EXT}"
+    ),
     "btn.save_settings": "Save settings",
     "btn.refresh_list": "Refresh list",
     "tip.refresh_list": "Re-analyzes the list and regenerates planned names.",
@@ -1028,8 +1047,9 @@ _EN = {
         "{SZEZON} – season, e.g. S01\n"
         "{EPIZOD} – episode, e.g. E01\n\n"
         "Advanced variables:\n\n"
-        "{EP} – full episode tag, e.g. S01E01\n"
         "{NYELV} – subtitle language\n"
+        "{KITERJ} – file extension without a dot\n"
+        "{EP} – full episode tag, e.g. S01E01\n"
         "{EXT} – file extension without a dot\n\n"
         "Curly braces are part of the template syntax."
     ),

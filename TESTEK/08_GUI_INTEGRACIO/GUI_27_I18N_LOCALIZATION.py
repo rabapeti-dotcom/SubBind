@@ -209,6 +209,9 @@ class TestGui27I18nLocalization(unittest.TestCase):
             "name": self.win.name_label.text(),
             "template": self.win.template_label.text(),
             "vars": self.win.base_vars_label.text(),
+            "var_cim": self.win.var_buttons["{CIM}"].text(),
+            "var_szezon": self.win.var_buttons["{SZEZON}"].text(),
+            "var_epizod": self.win.var_buttons["{EPIZOD}"].text(),
             "tpl": self.win.default_template_label.text(),
             "pref": self.win.subtitle_pref_label.text(),
             "pref_items": tuple(
@@ -242,6 +245,11 @@ class TestGui27I18nLocalization(unittest.TestCase):
             "Check name conflicts in advance",
             "Keep selections",
             "Advanced template variables",
+            "subtitle language",
+            "season+episode",
+            "Title {CIM}",
+            "Season {SZEZON}",
+            "Episode {EPIZOD}",
             "Save settings",
             "Refresh list",
             "Reset settings",
@@ -258,6 +266,9 @@ class TestGui27I18nLocalization(unittest.TestCase):
         self.assertEqual(en["name"], "Series name:")
         self.assertEqual(en["template"], "Desired name template:")
         self.assertEqual(en["vars"], "Basic variables:")
+        self.assertEqual(en["var_cim"], "Title {CIM}")
+        self.assertEqual(en["var_szezon"], "Season {SZEZON}")
+        self.assertEqual(en["var_epizod"], "Episode {EPIZOD}")
         self.assertEqual(en["tpl"], "Default series template: {CIM}.{SZEZON}{EPIZOD}")
         self.assertEqual(en["pref"], "Preferred subtitle language:")
         self.assertEqual(en["pref_items"], ("Hungarian", "German", "English", "Spanish"))
@@ -266,7 +277,11 @@ class TestGui27I18nLocalization(unittest.TestCase):
         self.assertEqual(en["subdirs"], "Include subfolders")
         self.assertEqual(en["conflicts"], "Check name conflicts in advance")
         self.assertEqual(en["preserve"], "Keep selections")
-        self.assertEqual(en["adv_vars"], "Advanced template variables: {NYELV}, {KITERJ}, {EP}, {EXT}")
+        self.assertEqual(
+            en["adv_vars"],
+            "Advanced template variables: subtitle language {NYELV}, "
+            "extension {KITERJ}, season+episode {EP}, extension {EXT}",
+        )
         self.assertEqual(en["save"], "Save settings")
         self.assertEqual(en["refresh"], "Refresh list")
         self.assertEqual(en["reset"], "Reset settings")
@@ -284,6 +299,9 @@ class TestGui27I18nLocalization(unittest.TestCase):
         self.assertEqual(hu["name"], "Sorozat neve:")
         self.assertEqual(hu["template"], "Kívánt név sablon:")
         self.assertEqual(hu["vars"], "Alap változók:")
+        self.assertEqual(hu["var_cim"], "Cím {CIM}")
+        self.assertEqual(hu["var_szezon"], "Évad {SZEZON}")
+        self.assertEqual(hu["var_epizod"], "Epizód {EPIZOD}")
         self.assertEqual(hu["tpl"], "Alapértelmezett sorozatsablon: {CIM}.{SZEZON}{EPIZOD}")
         self.assertEqual(hu["pref"], "Preferált felirat nyelve:")
         self.assertEqual(hu["pref_items"], ("Magyar", "Német", "Angol", "Spanyol"))
@@ -292,7 +310,11 @@ class TestGui27I18nLocalization(unittest.TestCase):
         self.assertEqual(hu["subdirs"], "Almappák bevonása")
         self.assertEqual(hu["conflicts"], "Névütközések előzetes ellenőrzése")
         self.assertEqual(hu["preserve"], "Kijelölések megőrzése")
-        self.assertEqual(hu["adv_vars"], "Haladó sablonváltozók: {NYELV}, {KITERJ}, {EP}, {EXT}")
+        self.assertEqual(
+            hu["adv_vars"],
+            "Haladó sablonváltozók: felirat nyelve {NYELV}, "
+            "kiterjesztés {KITERJ}, évad+epizód {EP}, kiterjesztés {EXT}",
+        )
         self.assertEqual(hu["save"], "Beállítások mentése")
         self.assertEqual(hu["refresh"], "Lista frissítése")
         self.assertEqual(hu["reset"], "Beállítások visszaállítása")
@@ -307,6 +329,20 @@ class TestGui27I18nLocalization(unittest.TestCase):
         self.assertEqual(en2["heading"], "Naming")
         self.assertEqual(en2["normalize"], "Normalize file names")
         self.assertEqual(en2["mode_items"], ("Automatic / Mixed", "Series", "Movie"))
+        self.assertEqual(en2["var_cim"], "Title {CIM}")
+        self.assertEqual(en2["var_szezon"], "Season {SZEZON}")
+        self.assertEqual(en2["adv_vars"], en["adv_vars"])
+
+        original = self.win.template_edit.text()
+        self.win.template_edit.setText("")
+        self.win.var_buttons["{CIM}"].click()
+        APP.processEvents()
+        self.assertEqual(self.win.template_edit.text(), "{CIM}")
+        self.win.var_buttons["{SZEZON}"].click()
+        APP.processEvents()
+        self.assertEqual(self.win.template_edit.text(), "{CIM}{SZEZON}")
+        self.win.template_edit.setText(original)
+        APP.processEvents()
 
 
 def tearDownModule():
